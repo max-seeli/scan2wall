@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=1.24.0",
     "opencv-python>=4.9.0",
     "pillow>=10.3.0",
+    "python-dotenv>=1.1.1",
     "python-multipart>=0.0.9",
     "qrcode>=7.4.2",
     "requests>=2.32.5",
