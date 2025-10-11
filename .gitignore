@@ -35,3 +35,4 @@ ComfyUI/__pycache__/
 requirements.txt
 torun.sh
 miniconda.sh
+3dgen/input
