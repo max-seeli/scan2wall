@@ -34,3 +34,4 @@ ComfyUI/custom_nodes/__pycache__/
 ComfyUI/__pycache__/
 requirements.txt
 torun.sh
+miniconda.sh
