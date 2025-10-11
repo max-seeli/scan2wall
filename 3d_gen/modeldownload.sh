@@ -10,7 +10,7 @@ pip install comfy-cli
 export COMFY_CLI_SKIP_PROMPT=1
 
 # Download models (assuming ComfyUI is at ~/scan2wall/ComfyUI)
-cd $HOME/3d_gen/scan2wall/ComfyUI
+cd $HOME/scan2wall/3d_gen/ComfyUI
 
 # Download DIT model
 comfy --here model download \
