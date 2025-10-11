@@ -25,6 +25,7 @@ Return ONLY valid JSON in this exact schema:
     "width": {"value": float},
     "height": {"value": float}
   },
+  "weight_kg": {"value": float},
   "friction_coefficients": {
     "static": float,
     "dynamic": float
