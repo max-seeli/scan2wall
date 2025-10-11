@@ -1,0 +1,6 @@
+static/*
+src/scan2wall/image_collection/uploads/*
+src/scan2wall/image_collection/processed/*
+
+**.pyc
+__pycache__/
