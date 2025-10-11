@@ -22,55 +22,15 @@ source $HOME/miniconda3/bin/activate comfyui
 
 echo "✅ Miniconda installed and comfyui env active"
 
-# --- Install core dependencies ---
-cat > requirements.txt <<EOF
-torch==2.4.0
-torchvision==0.19.0
-torchaudio==2.4.0
-xformers==0.0.27.post2
-numpy==2.1.3
-pillow==11.0.0
-tqdm==4.67.1
-safetensors==0.4.5
-transformers==4.46.3
-diffusers==0.31.0
-accelerate==1.10.1
-huggingface-hub==0.25.2
-einops==0.8.0
-scipy==1.14.1
-opencv-python==4.10.0.84
-pandas==2.2.3
-matplotlib==3.9.2
-kornia==0.7.2
-pymeshlab==2023.12
-trimesh==4.4.9
-open3d==0.19.0
-rembg==2.0.57
-EOF
-
+#--- Install reqs for ComfyUI and custom nodes ---
+cd ~/ComfyUI
 pip install -r requirements.txt --upgrade --no-cache-dir
 
---- Install reqs for ComfyUI and custom nodes ---
-cd ~/ComfyUI
+cd custom_nodes
+git clone https://github.com/Comfy-Org/ComfyUI-Manager
 
-# Install main ComfyUI requirements (if present)
-if [ -f requirements.txt ]; then
-  echo "📦 Installing ComfyUI core requirements..."
-  pip install -r requirements.txt --upgrade --no-cache-dir
-fi
+cd ComfyUI-Manager
 
-# Loop through each subfolder in custom_nodes and install its requirements if present
-echo "🔍 Scanning custom_nodes for dependencies..."
-for d in custom_nodes/*/ ; do
-  if [ -f "${d}requirements.txt" ]; then
-    echo "📦 Installing requirements for ${d}..."
-    pip install -r "${d}requirements.txt" --upgrade --no-cache-dir || true
-  else
-    echo "⚠️  No requirements.txt in ${d}, skipping."
-  fi
-done
-
-find custom_nodes -maxdepth 1 -type d -exec touch {}/__init__.py \;
 
 echo "🎨 All set! To run ComfyUI:"
 echo "--------------------------------------------"
