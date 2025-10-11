@@ -22,4 +22,4 @@ comfy --here model download \
 comfy --here model download \
   --url "https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-vae-v2-1/model.fp16.ckpt" \
   --relative-path models/vae \
-  --filename hunyuan3d-vae-v2-1-fp16.ckpt
+  --filename Hunyuan3D-vae-v2-1-fp16.ckpt
