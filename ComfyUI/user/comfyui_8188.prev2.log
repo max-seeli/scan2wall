@@ -1,0 +1,119 @@
+## ComfyUI-Manager: installing dependencies done.
+[2025-10-11 13:45:13.221] ** ComfyUI startup time: 2025-10-11 13:45:13.221
+[2025-10-11 13:45:13.221] ** Platform: Linux
+[2025-10-11 13:45:13.221] ** Python version: 3.10.18 (main, Jun  5 2025, 13:14:17) [GCC 11.2.0]
+[2025-10-11 13:45:13.221] ** Python executable: /home/shadeform/miniconda3/envs/comfyui/bin/python
+[2025-10-11 13:45:13.221] ** ComfyUI Path: /home/shadeform/ComfyUI
+[2025-10-11 13:45:13.221] ** ComfyUI Base Folder Path: /home/shadeform/ComfyUI
+[2025-10-11 13:45:13.221] ** User directory: /home/shadeform/ComfyUI/user
+[2025-10-11 13:45:13.221] ** ComfyUI-Manager config path: /home/shadeform/ComfyUI/user/default/ComfyUI-Manager/config.ini
+[2025-10-11 13:45:13.221] ** Log path: /home/shadeform/ComfyUI/user/comfyui.log
+
+Prestartup times for custom nodes:
+[2025-10-11 13:45:13.264]    0.3 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Manager
+[2025-10-11 13:45:13.264] 
+[2025-10-11 13:45:14.188] Checkpoint files will always be loaded safely.
+[2025-10-11 13:45:14.557] Total VRAM 143072 MB, total RAM 201289 MB
+[2025-10-11 13:45:14.557] pytorch version: 2.4.0+cu121
+[2025-10-11 13:45:15.115] /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/xformers/ops/fmha/flash.py:211: FutureWarning: `torch.library.impl_abstract` was renamed to `torch.library.register_fake`. Please use that instead; we will remove `torch.library.impl_abstract` in a future version of PyTorch.
+  @torch.library.impl_abstract("xformers_flash::flash_fwd")
+[2025-10-11 13:45:15.156] /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/xformers/ops/fmha/flash.py:344: FutureWarning: `torch.library.impl_abstract` was renamed to `torch.library.register_fake`. Please use that instead; we will remove `torch.library.impl_abstract` in a future version of PyTorch.
+  @torch.library.impl_abstract("xformers_flash::flash_bwd")
+[2025-10-11 13:45:15.382] xformers version: 0.0.27.post2
+[2025-10-11 13:45:15.382] Set vram state to: NORMAL_VRAM
+[2025-10-11 13:45:15.382] Device: cuda:0 NVIDIA H200 : cudaMallocAsync
+[2025-10-11 13:45:15.389] Torch version too old to set sdpa backend priority.
+[2025-10-11 13:45:15.525] Using xformers attention
+[2025-10-11 13:45:15.929] Python version: 3.10.18 (main, Jun  5 2025, 13:14:17) [GCC 11.2.0]
+[2025-10-11 13:45:15.929] ComfyUI version: 0.3.64
+[2025-10-11 13:45:15.932] ComfyUI frontend version: 1.27.10
+[2025-10-11 13:45:15.932] [Prompt Server] web root: /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/comfyui_frontend_package/static
+[2025-10-11 13:45:16.667] ### Loading: ComfyUI-Manager (V3.37)
+[2025-10-11 13:45:16.667] [ComfyUI-Manager] network_mode: public
+[2025-10-11 13:45:16.705] ### ComfyUI Version: v0.3.64-17-g14d642ac | Released on '2025-10-10'
+[2025-10-11 13:45:16.865] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json
+[2025-10-11 13:45:16.871] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/model-list.json
+[2025-10-11 13:45:16.872] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/alter-list.json
+[2025-10-11 13:45:17.092] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json
+[2025-10-11 13:45:17.115] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/github-stats.json
+[2025-10-11 13:45:17.543] ------------------------------------------
+[2025-10-11 13:45:17.543] [34mComfyroll Studio v1.76 : [92m 175 Nodes Loaded[0m
+[2025-10-11 13:45:17.543] ------------------------------------------
+[2025-10-11 13:45:17.543] ** For changes, please see patch notes at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/blob/main/Patch_Notes.md
+[2025-10-11 13:45:17.543] ** For help, please see the wiki at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki
+[2025-10-11 13:45:17.543] ------------------------------------------
+[2025-10-11 13:45:19.176] 
+Import times for custom nodes:
+[2025-10-11 13:45:19.176]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/websocket_image_save.py
+[2025-10-11 13:45:19.176]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-BRIA_AI-RMBG
+[2025-10-11 13:45:19.176]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-KJNodes
+[2025-10-11 13:45:19.176]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Manager
+[2025-10-11 13:45:19.176]    0.2 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI_Comfyroll_CustomNodes
+[2025-10-11 13:45:19.176]    0.6 seconds: /home/shadeform/ComfyUI/custom_nodes/rembg-comfyui-node
+[2025-10-11 13:45:19.176]    0.6 seconds: /home/shadeform/ComfyUI/custom_nodes/comfyui-inspyrenet-rembg
+[2025-10-11 13:45:19.176]    1.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1
+[2025-10-11 13:45:19.176] 
+[2025-10-11 13:45:19.374] Context impl SQLiteImpl.
+[2025-10-11 13:45:19.374] Will assume non-transactional DDL.
+[2025-10-11 13:45:19.375] No target revision found.
+[2025-10-11 13:45:19.382] Starting server
+
+[2025-10-11 13:45:19.383] To see the GUI go to: http://0.0.0.0:8188
+[2025-10-11 13:45:19.883] FETCH ComfyRegistry Data: 5/99
+[2025-10-11 13:45:22.799] FETCH ComfyRegistry Data: 10/99
+[2025-10-11 13:45:25.752] FETCH ComfyRegistry Data: 15/99
+[2025-10-11 13:45:28.673] FETCH ComfyRegistry Data: 20/99
+[2025-10-11 13:45:30.516] got prompt
+[2025-10-11 13:45:31.573] FETCH ComfyRegistry Data: 25/99
+[2025-10-11 13:45:32.182] Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+[2025-10-11 13:45:32.826] Inspyrenet Rembg: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.56it/s]Inspyrenet Rembg: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.56it/s]
+[2025-10-11 13:45:34.509] FETCH ComfyRegistry Data: 30/99
+[2025-10-11 13:45:37.406] FETCH ComfyRegistry Data: 35/99
+[2025-10-11 13:45:40.751] FETCH ComfyRegistry Data: 40/99
+[2025-10-11 13:45:41.322] using moe
+[2025-10-11 13:45:42.903] using moe
+[2025-10-11 13:45:43.693] FETCH ComfyRegistry Data: 45/99
+[2025-10-11 13:45:44.495] using moe
+[2025-10-11 13:45:46.077] using moe
+[2025-10-11 13:45:46.594] FETCH ComfyRegistry Data: 50/99
+[2025-10-11 13:45:47.653] using moe
+[2025-10-11 13:45:49.221] using moe
+[2025-10-11 13:45:49.515] FETCH ComfyRegistry Data: 55/99
+[2025-10-11 13:45:50.914] PointCrossAttentionEncoder INFO: pc_sharpedge_size is not given, using pc_size as pc_sharpedge_size
+[2025-10-11 13:45:52.423] FETCH ComfyRegistry Data: 60/99
+[2025-10-11 13:45:55.362] FETCH ComfyRegistry Data: 65/99
+[2025-10-11 13:45:58.279] FETCH ComfyRegistry Data: 70/99
+[2025-10-11 13:45:58.514] Diffusion Sampling:: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:01<00:00,  9.73it/s]Diffusion Sampling:: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:01<00:00,  9.48it/s]
+[2025-10-11 13:45:58.932] PointCrossAttentionEncoder INFO: pc_sharpedge_size is not given, using pc_size as pc_sharpedge_size
+[2025-10-11 13:46:00.328] 2025-10-11 13:46:00,328 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
+[2025-10-11 13:46:00.328] FlashVDMVolumeDecoding Resolution: [63, 126, 252]
+[2025-10-11 13:46:00.350] FlashVDM Volume Decoding: 100%|█████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 350.35it/s]
+[2025-10-11 13:46:00.772] Decoded mesh with 77046 vertices and 281908 faces
+[2025-10-11 13:46:01.637] FETCH ComfyRegistry Data: 75/99
+[2025-10-11 13:46:05.840] FETCH ComfyRegistry Data: 80/99
+[2025-10-11 13:46:08.341] Removed floaters, resulting in 77046 vertices and 154092 faces
+[2025-10-11 13:46:08.372] Removed degenerate faces, resulting in 77046 vertices and 154092 faces
+[2025-10-11 13:46:08.374] Fast remesh: 154092 → ~30000 faces
+[2025-10-11 13:46:08.757] Done: 30332 faces
+[2025-10-11 13:46:12.819] Fetching 19 files: 100%|████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:00<00:00, 28021.02it/s]
+[2025-10-11 13:46:14.845] FETCH ComfyRegistry Data: 85/99
+[2025-10-11 13:46:17.833] FETCH ComfyRegistry Data: 90/99
+[2025-10-11 13:46:20.758] FETCH ComfyRegistry Data: 95/99
+[2025-10-11 13:46:21.410] Loading pipeline components...: 100%|████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:08<00:00,  1.43s/it]
+[2025-10-11 13:46:22.957] Generating MultiViews PBR ...
+[2025-10-11 13:46:23.634] FETCH ComfyRegistry Data [DONE]
+[2025-10-11 13:46:23.753] [ComfyUI-Manager] default cache updated: https://api.comfy.org/nodes
+[2025-10-11 13:46:23.762] FETCH DATA from: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json [DONE]
+[2025-10-11 13:46:23.835] [ComfyUI-Manager] All startup tasks have been completed.
+[2025-10-11 13:46:33.756] 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:09<00:00,  1.08it/s]100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:09<00:00,  1.01it/s]
+[2025-10-11 13:46:36.533] PBR GLB文件已保存: /home/shadeform/ComfyUI/temp/Hy21_Mesh.glb
+[2025-10-11 13:46:37.236] Prompt executed in 66.70 seconds
+[2025-10-11 13:46:54.424] got prompt
+[2025-10-11 13:46:54.524] Fetching 19 files: 100%|████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:00<00:00, 22322.63it/s]
+[2025-10-11 13:47:00.761] got prompt
+[2025-10-11 13:47:02.129] Loading pipeline components...: 100%|████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:07<00:00,  1.27s/it]
+[2025-10-11 13:47:03.643] Generating MultiViews PBR ...
+[2025-10-11 13:47:04.610] Interrupting prompt a88acabc-b706-4fe1-b067-90321a96f80f
+[2025-10-11 13:47:05.037] Interrupting prompt a88acabc-b706-4fe1-b067-90321a96f80f
+[2025-10-11 13:47:11.448] 
+Stopped server

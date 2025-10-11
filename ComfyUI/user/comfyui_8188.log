@@ -1,0 +1,123 @@
+## ComfyUI-Manager: installing dependencies done.
+[2025-10-11 13:52:41.020] ** ComfyUI startup time: 2025-10-11 13:52:41.020
+[2025-10-11 13:52:41.020] ** Platform: Linux
+[2025-10-11 13:52:41.020] ** Python version: 3.10.18 (main, Jun  5 2025, 13:14:17) [GCC 11.2.0]
+[2025-10-11 13:52:41.020] ** Python executable: /home/shadeform/miniconda3/envs/comfyui/bin/python
+[2025-10-11 13:52:41.020] ** ComfyUI Path: /home/shadeform/ComfyUI
+[2025-10-11 13:52:41.020] ** ComfyUI Base Folder Path: /home/shadeform/ComfyUI
+[2025-10-11 13:52:41.020] ** User directory: /home/shadeform/ComfyUI/user
+[2025-10-11 13:52:41.020] ** ComfyUI-Manager config path: /home/shadeform/ComfyUI/user/default/ComfyUI-Manager/config.ini
+[2025-10-11 13:52:41.020] ** Log path: /home/shadeform/ComfyUI/user/comfyui.log
+
+Prestartup times for custom nodes:
+[2025-10-11 13:52:41.065]    0.3 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Manager
+[2025-10-11 13:52:41.065] 
+[2025-10-11 13:52:41.989] Checkpoint files will always be loaded safely.
+[2025-10-11 13:52:42.364] Total VRAM 143072 MB, total RAM 201289 MB
+[2025-10-11 13:52:42.364] pytorch version: 2.4.0+cu121
+[2025-10-11 13:52:42.913] /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/xformers/ops/fmha/flash.py:211: FutureWarning: `torch.library.impl_abstract` was renamed to `torch.library.register_fake`. Please use that instead; we will remove `torch.library.impl_abstract` in a future version of PyTorch.
+  @torch.library.impl_abstract("xformers_flash::flash_fwd")
+[2025-10-11 13:52:42.955] /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/xformers/ops/fmha/flash.py:344: FutureWarning: `torch.library.impl_abstract` was renamed to `torch.library.register_fake`. Please use that instead; we will remove `torch.library.impl_abstract` in a future version of PyTorch.
+  @torch.library.impl_abstract("xformers_flash::flash_bwd")
+[2025-10-11 13:52:43.184] xformers version: 0.0.27.post2
+[2025-10-11 13:52:43.184] Set vram state to: NORMAL_VRAM
+[2025-10-11 13:52:43.184] Device: cuda:0 NVIDIA H200 : cudaMallocAsync
+[2025-10-11 13:52:43.191] Torch version too old to set sdpa backend priority.
+[2025-10-11 13:52:43.336] Using xformers attention
+[2025-10-11 13:52:43.751] Python version: 3.10.18 (main, Jun  5 2025, 13:14:17) [GCC 11.2.0]
+[2025-10-11 13:52:43.751] ComfyUI version: 0.3.64
+[2025-10-11 13:52:43.754] ComfyUI frontend version: 1.27.10
+[2025-10-11 13:52:43.754] [Prompt Server] web root: /home/shadeform/miniconda3/envs/comfyui/lib/python3.10/site-packages/comfyui_frontend_package/static
+[2025-10-11 13:52:44.507] ### Loading: ComfyUI-Manager (V3.37)
+[2025-10-11 13:52:44.507] [ComfyUI-Manager] network_mode: public
+[2025-10-11 13:52:44.547] ### ComfyUI Version: v0.3.64-17-g14d642ac | Released on '2025-10-10'
+[2025-10-11 13:52:44.662] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json
+[2025-10-11 13:52:44.747] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json
+[2025-10-11 13:52:44.786] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/github-stats.json
+[2025-10-11 13:52:44.941] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/model-list.json
+[2025-10-11 13:52:44.943] [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/alter-list.json
+[2025-10-11 13:52:45.374] ------------------------------------------
+[2025-10-11 13:52:45.374] [34mComfyroll Studio v1.76 : [92m 175 Nodes Loaded[0m
+[2025-10-11 13:52:45.374] ------------------------------------------
+[2025-10-11 13:52:45.374] ** For changes, please see patch notes at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/blob/main/Patch_Notes.md
+[2025-10-11 13:52:45.374] ** For help, please see the wiki at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki
+[2025-10-11 13:52:45.374] ------------------------------------------
+[2025-10-11 13:52:46.935] 
+Import times for custom nodes:
+[2025-10-11 13:52:46.935]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/websocket_image_save.py
+[2025-10-11 13:52:46.935]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-BRIA_AI-RMBG
+[2025-10-11 13:52:46.935]    0.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-KJNodes
+[2025-10-11 13:52:46.935]    0.1 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Manager
+[2025-10-11 13:52:46.935]    0.2 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI_Comfyroll_CustomNodes
+[2025-10-11 13:52:46.935]    0.6 seconds: /home/shadeform/ComfyUI/custom_nodes/comfyui-inspyrenet-rembg
+[2025-10-11 13:52:46.935]    0.6 seconds: /home/shadeform/ComfyUI/custom_nodes/rembg-comfyui-node
+[2025-10-11 13:52:46.935]    1.0 seconds: /home/shadeform/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1
+[2025-10-11 13:52:46.935] 
+[2025-10-11 13:52:47.118] Context impl SQLiteImpl.
+[2025-10-11 13:52:47.118] Will assume non-transactional DDL.
+[2025-10-11 13:52:47.119] No target revision found.
+[2025-10-11 13:52:47.125] Starting server
+
+[2025-10-11 13:52:47.126] To see the GUI go to: http://0.0.0.0:8188
+[2025-10-11 13:52:47.664] FETCH ComfyRegistry Data: 5/99
+[2025-10-11 13:52:51.030] FETCH ComfyRegistry Data: 10/99
+[2025-10-11 13:52:53.935] FETCH ComfyRegistry Data: 15/99
+[2025-10-11 13:52:56.841] FETCH ComfyRegistry Data: 20/99
+[2025-10-11 13:52:59.754] FETCH ComfyRegistry Data: 25/99
+[2025-10-11 13:53:02.701] FETCH ComfyRegistry Data: 30/99
+[2025-10-11 13:53:05.622] FETCH ComfyRegistry Data: 35/99
+[2025-10-11 13:53:08.545] FETCH ComfyRegistry Data: 40/99
+[2025-10-11 13:53:09.977] got prompt
+[2025-10-11 13:53:11.451] FETCH ComfyRegistry Data: 45/99
+[2025-10-11 13:53:11.708] Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+[2025-10-11 13:53:12.338] Inspyrenet Rembg: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.59it/s]Inspyrenet Rembg: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.59it/s]
+[2025-10-11 13:53:14.371] FETCH ComfyRegistry Data: 50/99
+[2025-10-11 13:53:17.308] FETCH ComfyRegistry Data: 55/99
+[2025-10-11 13:53:20.208] FETCH ComfyRegistry Data: 60/99
+[2025-10-11 13:53:20.890] using moe
+[2025-10-11 13:53:22.491] using moe
+[2025-10-11 13:53:23.854] FETCH ComfyRegistry Data: 65/99
+[2025-10-11 13:53:24.062] using moe
+[2025-10-11 13:53:25.640] using moe
+[2025-10-11 13:53:26.769] FETCH ComfyRegistry Data: 70/99
+[2025-10-11 13:53:27.232] using moe
+[2025-10-11 13:53:28.805] using moe
+[2025-10-11 13:53:29.686] FETCH ComfyRegistry Data: 75/99
+[2025-10-11 13:53:30.499] PointCrossAttentionEncoder INFO: pc_sharpedge_size is not given, using pc_size as pc_sharpedge_size
+[2025-10-11 13:53:32.588] FETCH ComfyRegistry Data: 80/99
+[2025-10-11 13:53:35.520] FETCH ComfyRegistry Data: 85/99
+[2025-10-11 13:53:38.129] Diffusion Sampling:: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:01<00:00,  9.71it/s]Diffusion Sampling:: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:01<00:00,  9.42it/s]
+[2025-10-11 13:53:38.278] PointCrossAttentionEncoder INFO: pc_sharpedge_size is not given, using pc_size as pc_sharpedge_size
+[2025-10-11 13:53:38.453] FETCH ComfyRegistry Data: 90/99
+[2025-10-11 13:53:39.656] 2025-10-11 13:53:39,656 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
+[2025-10-11 13:53:39.656] FlashVDMVolumeDecoding Resolution: [63, 126, 252]
+[2025-10-11 13:53:39.677] FlashVDM Volume Decoding: 100%|█████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 346.29it/s]
+[2025-10-11 13:53:40.075] Decoded mesh with 77005 vertices and 281684 faces
+[2025-10-11 13:53:41.435] FETCH ComfyRegistry Data: 95/99
+[2025-10-11 13:53:45.849] FETCH ComfyRegistry Data [DONE]
+[2025-10-11 13:53:47.582] Removed floaters, resulting in 77005 vertices and 154010 faces
+[2025-10-11 13:53:47.591] [ComfyUI-Manager] default cache updated: https://api.comfy.org/nodes
+[2025-10-11 13:53:47.603] FETCH DATA from: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json [DONE]
+[2025-10-11 13:53:47.634] Removed degenerate faces, resulting in 77005 vertices and 154010 faces
+[2025-10-11 13:53:47.638] Fast remesh: 154010 → ~30000 faces
+[2025-10-11 13:53:48.035] Done: 30268 faces
+[2025-10-11 13:53:48.060] [ComfyUI-Manager] All startup tasks have been completed.
+[2025-10-11 13:53:50.343] Fetching 19 files: 100%|███████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:00<00:00, 151217.79it/s]
+[2025-10-11 13:53:58.341] Loading pipeline components...: 100%|████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:07<00:00,  1.46s/it]Loading pipeline components...: 100%|████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:07<00:00,  1.33s/it]
+[2025-10-11 13:53:59.843] Generating MultiViews PBR ...
+[2025-10-11 13:54:10.638] 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:09<00:00,  1.08it/s]100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:09<00:00,  1.01it/s]
+[2025-10-11 13:54:11.875] !!! Exception during processing !!! name 'start_total' is not defined
+[2025-10-11 13:54:11.875] Traceback (most recent call last):
+  File "/home/shadeform/ComfyUI/execution.py", line 496, in execute
+    output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, hidden_inputs=hidden_inputs)
+  File "/home/shadeform/ComfyUI/execution.py", line 315, in get_output_data
+    return_values = await _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, obj.FUNCTION, allow_interrupt=True, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, hidden_inputs=hidden_inputs)
+  File "/home/shadeform/ComfyUI/execution.py", line 289, in _async_map_node_over_list
+    await process_inputs(input_dict, i)
+  File "/home/shadeform/ComfyUI/execution.py", line 277, in process_inputs
+    result = f(**inputs)
+  File "/home/shadeform/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/nodes.py", line 462, in genmultiviews
+    print(f"TOTAL MultiViews generation: {time.time() - start_total:.2f}s")
+NameError: name 'start_total' is not defined
+
+[2025-10-11 13:54:11.876] Prompt executed in 61.88 seconds
