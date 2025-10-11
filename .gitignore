@@ -1,0 +1,36 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.egg-info/
+build/
+dist/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Conda / Poetry / venv ---
+.env/
+.venv/
+venv/
+env/
+*.lock
+*.yml
+*.toml
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Logs / misc ---
+*.log
+*.bak
+*.swp
+*.tmp
+
+# --- ComfyUI specific ---
+ComfyUI/custom_nodes/__pycache__/
+ComfyUI/__pycache__/
+requirements.txt
+torun.sh
