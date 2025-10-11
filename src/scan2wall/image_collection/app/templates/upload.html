@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Phone → Python Image Drop</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 1.25rem;
+      background: #f9f9f9;
+    }
+    .card {
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 1.25rem;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      background: #fff;
+      overflow: hidden;
+    }
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 0.75rem;
+    }
+    p {
+      color: #333;
+      line-height: 1.35;
+      margin: 0 0 1rem;
+    }
+    form {
+      display: block;
+      width: 100%;
+      margin: 0;
+    }
+    .cta {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 120px;
+      padding: 1.5rem;
+      border: 2px dashed #bbb;
+      border-radius: 12px;
+      text-align: center;
+      background: #fafafa;
+      transition: background 0.2s, border-color 0.2s;
+      cursor: pointer;
+    }
+    .cta:hover {
+      background: #f0f0f0;
+      border-color: #999;
+    }
+    .small {
+      color: #666;
+      font-size: 0.9rem;
+    }
+    .hidden { display: none; }
+    #status {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      font-size: 0.86rem;
+      background: #f7f7f7;
+      padding: 0.75rem;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    button {
+      padding: 0.8rem 1rem;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Send a photo to Python</h1>
+    <p>Tap the box below to open your camera. Upload starts automatically after you take a photo.</p>
+
+    <form id="form" method="post" action="/upload" enctype="multipart/form-data">
+      <input id="file" class="hidden" type="file" name="file" accept="image/*" capture="environment">
+      <label class="cta" for="file">
+        📷 <strong>Take or choose a photo</strong>
+        <span class="small">Camera opens directly • Auto-upload on selection</span>
+      </label>
+    </form>
+
+    <div id="progress" class="small" style="margin-top: 1rem;"></div>
+
+    <p class="small" style="margin-top: 1rem;">
+      Tip: Add this page to your home screen for a one-tap workflow.
+    </p>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file');
+    const progress = document.getElementById('progress');
+    const statusBox = document.getElementById('status');
+
+    fileInput.addEventListener('change', async () => {
+      if (!fileInput.files.length) return;
+      const file = fileInput.files[0];
+      progress.textContent = `Uploading: ${file.name} ...`;
+
+      const data = new FormData();
+      data.append('file', file);
+      try {
+        const resp = await fetch('/upload', { method: 'POST', body: data });
+        console.log(resp);
+        if (resp.status == 201) {
+          progress.textContent = 'Uploaded finished.';
+          return;
+        }
+      } catch (e) {
+        progress.textContent = 'Upload failed: ' + e;
+      } finally {
+        fileInput.value = '';
+      }
+    });
+
+  
+    
+  </script>
+</body>
+</html>
