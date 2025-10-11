@@ -1,8 +1,0 @@
-__init__.py
-README.md
-LICENSE
-requirements.txt
-Inspyrenet_Rembg.py
-inspyrenet-rembg-basic-workflow.json
-pyproject.toml
-.github/workflows/publish.yml
