@@ -30,11 +30,19 @@ for repo in "${CUSTOM_NODES[@]}"; do
     git clone "$repo"
 done
 
-# --- Install dependencies for all custom nodes ---
-pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI_Comfyroll_CustomNodes/requirements.txt
+--- Install dependencies for all custom nodes ---
 pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/requirements.txt
 pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt
 pip install rembg[gpu]
+
+cd $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer/
+python -m setup install
+cd $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/DifferentiableRenderer/
+python -m setup install
+
+cp -r $HOME/scan2wall/andrea-nodes $HOME/scan2wall/ComfyUI/custom_nodes/andrea-nodes
+
+pip install transformers==4.46.3
 
 echo "🎨 All set! To run ComfyUI:"
 echo "--------------------------------------------"

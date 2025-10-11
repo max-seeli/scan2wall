@@ -80,9 +80,11 @@ class Hy3D21PostprocessMeshSimple:
 
 # Required exports
 NODE_CLASS_MAPPINGS = {
-    "Hy3D21ImageWithAlphaInput": Hy3D21ImageWithAlphaInput
+    "Hy3D21ImageWithAlphaInput": Hy3D21ImageWithAlphaInput,
+    "Hy3D21PostprocessMeshSimple": Hy3D21PostprocessMeshSimple
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Hy3D21ImageWithAlphaInput": "Image with Alpha Input (Hy3D21)"
+    "Hy3D21ImageWithAlphaInput": "Image with Alpha Input (Hy3D21)",
+     "Hy3D21PostprocessMeshSimple": "PostProcessAndrea"
 }
