@@ -1,11 +1,11 @@
-# #!/bin/bash
-# set -e  # stop on first error
+#!/bin/bash
+set -e  # stop on first error
 
-# #--- Install reqs for ComfyUI and custom nodes ---
-# git clone https://github.com/comfyanonymous/ComfyUI
+#--- Install reqs for ComfyUI and custom nodes ---
+git clone https://github.com/comfyanonymous/ComfyUI
 
-# cd $HOME/scan2wall/ComfyUI
-# pip install -r requirements.txt --upgrade --no-cache-dir
+cd $HOME/scan2wall/ComfyUI
+pip install -r requirements.txt --upgrade --no-cache-dir
 
 cd $HOME/scan2wall/ComfyUI/custom_nodes
 git clone https://github.com/Comfy-Org/ComfyUI-Manager
@@ -31,7 +31,10 @@ for repo in "${CUSTOM_NODES[@]}"; do
 done
 
 # --- Install dependencies for all custom nodes ---
-python $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Manager/cm-cli.py install-deps
+pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI_Comfyroll_CustomNodes/requirements.txt
+pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/requirements.txt
+pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt
+pip install rembg[gpu]
 
 echo "🎨 All set! To run ComfyUI:"
 echo "--------------------------------------------"
