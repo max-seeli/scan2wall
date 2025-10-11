@@ -4,16 +4,16 @@ set -e  # stop on first error
 #--- Install reqs for ComfyUI and custom nodes ---
 git clone https://github.com/comfyanonymous/ComfyUI
 
-cd $HOME/scan2wall/ComfyUI
+cd $HOME/3d_gen/scan2wall/ComfyUI
 pip install -r requirements.txt --upgrade --no-cache-dir
 
-cd $HOME/scan2wall/ComfyUI/custom_nodes
+cd $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes
 git clone https://github.com/Comfy-Org/ComfyUI-Manager
 
-cd $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Manager
+cd $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/ComfyUI-Manager
 pip install -r requirements.txt --upgrade --no-cache-dir
 
-cd $HOME/scan2wall/ComfyUI/custom_nodes
+cd $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes
 
 # --- Install custom nodes from git URLs ---
 CUSTOM_NODES=(
@@ -31,16 +31,16 @@ for repo in "${CUSTOM_NODES[@]}"; do
 done
 
 --- Install dependencies for all custom nodes ---
-pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/requirements.txt
-pip install -r $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt
+pip install -r $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/requirements.txt
+pip install -r $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/requirements.txt
 pip install rembg[gpu]
 
-cd $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer/
+cd $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer/
 python -m setup install
-cd $HOME/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/DifferentiableRenderer/
+cd $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/DifferentiableRenderer/
 python -m setup install
 
-cp -r $HOME/scan2wall/andrea-nodes $HOME/scan2wall/ComfyUI/custom_nodes/andrea-nodes
+cp -r $HOME/3d_gen/scan2wall/andrea-nodes $HOME/3d_gen/scan2wall/ComfyUI/custom_nodes/andrea-nodes
 
 pip install transformers==4.46.3
 
