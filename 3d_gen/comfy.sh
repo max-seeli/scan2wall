@@ -44,6 +44,7 @@ python -m setup install
 cp -r $HOME/$BPATH/andrea-nodes $HOME/$BPATH/ComfyUI/custom_nodes/andrea-nodes
 
 pip install transformers==4.46.3
+pip install pynanoinstantmeshes
 
 echo "🎨 All set! To run ComfyUI:"
 echo "--------------------------------------------"

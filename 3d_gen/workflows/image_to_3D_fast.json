@@ -1,22 +1,22 @@
 {
   "id": "5857dc0c-4c20-4d66-9628-bb1b9ef151ae",
   "revision": 0,
-  "last_node_id": 97,
-  "last_link_id": 183,
+  "last_node_id": 99,
+  "last_link_id": 188,
   "nodes": [
     {
       "id": 21,
       "type": "Hy3DBakeMultiViews",
       "pos": [
-        -25.420669555664062,
-        1480.329833984375
+        56.177433013916016,
+        1536.8587646484375
       ],
       "size": [
         247.41854858398438,
         146
       ],
       "flags": {},
-      "order": 22,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -99,8 +99,8 @@
       "id": 33,
       "type": "GetNode",
       "pos": [
-        16.075971603393555,
-        1326.1922607421875
+        97.6740493774414,
+        1382.72119140625
       ],
       "size": [
         210,
@@ -163,15 +163,15 @@
       "id": 51,
       "type": "PreviewImage",
       "pos": [
-        911.0850830078125,
-        1172.8597412109375
+        992.6831665039062,
+        1229.388671875
       ],
       "size": [
         298.908935546875,
         277.8708190917969
       ],
       "flags": {},
-      "order": 25,
+      "order": 24,
       "mode": 0,
       "inputs": [
         {
@@ -193,15 +193,15 @@
       "id": 49,
       "type": "Hy3DInPaint",
       "pos": [
-        281.9758605957031,
-        1478.86083984375
+        363.5740051269531,
+        1535.3897705078125
       ],
       "size": [
         270.072265625,
         138
       ],
       "flags": {},
-      "order": 23,
+      "order": 22,
       "mode": 0,
       "inputs": [
         {
@@ -280,8 +280,8 @@
       "id": 19,
       "type": "Hy3D21CameraConfig",
       "pos": [
-        -897.3323974609375,
-        1506.4891357421875
+        -815.734375,
+        1563.01806640625
       ],
       "size": [
         382.7560729980469,
@@ -333,9 +333,7 @@
         {
           "name": "INT",
           "type": "INT",
-          "links": [
-            81
-          ]
+          "links": []
         }
       ],
       "title": "Get_NumberOfFaces",
@@ -352,15 +350,15 @@
       "id": 46,
       "type": "SaveImage",
       "pos": [
-        -26.602455139160156,
-        1697.6866455078125
+        54.99563980102539,
+        1754.215576171875
       ],
       "size": [
         270,
         270.0001220703125
       ],
       "flags": {},
-      "order": 21,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -392,7 +390,7 @@
         266
       ],
       "flags": {},
-      "order": 16,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
@@ -416,7 +414,7 @@
           "name": "trimesh",
           "type": "TRIMESH",
           "links": [
-            80
+            185
           ]
         }
       ],
@@ -464,6 +462,7 @@
         "cnr_id": "comfyui-kjnodes",
         "ver": "1.1.2",
         "Node name for S&R": "StringConstant",
+        "aux_id": "kijai/ComfyUI-KJNodes",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -482,7 +481,7 @@
         58
       ],
       "flags": {},
-      "order": 10,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -511,15 +510,15 @@
       "id": 50,
       "type": "PreviewImage",
       "pos": [
-        590.0887451171875,
-        1171.270751953125
+        671.6868286132812,
+        1227.7996826171875
       ],
       "size": [
         279.83984375,
         287.4053955078125
       ],
       "flags": {},
-      "order": 24,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
@@ -549,7 +548,7 @@
         58
       ],
       "flags": {},
-      "order": 12,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -577,134 +576,6 @@
       "bgcolor": "#29699c"
     },
     {
-      "id": 4,
-      "type": "Hy3D21VAELoader",
-      "pos": [
-        -758.1572265625,
-        678.0780029296875
-      ],
-      "size": [
-        279.4253845214844,
-        58
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "vae_config",
-          "shape": 7,
-          "type": "HY3D21VAECONFIG",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "vae",
-          "type": "HY3DVAE",
-          "links": [
-            61
-          ]
-        }
-      ],
-      "properties": {
-        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
-        "ver": "e439689e4b67fb2af5f487ee26ef3a710be92658",
-        "Node name for S&R": "Hy3D21VAELoader",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "Hunyuan3D-vae-v2-1-fp16.ckpt"
-      ]
-    },
-    {
-      "id": 69,
-      "type": "LoadImage",
-      "pos": [
-        -1810.1839599609375,
-        1296.0576171875
-      ],
-      "size": [
-        274.080078125,
-        314.0001220703125
-      ],
-      "flags": {},
-      "order": 6,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            172
-          ]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.64",
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "black_bottle.webp",
-        "image"
-      ]
-    },
-    {
-      "id": 95,
-      "type": "InspyrenetRembg",
-      "pos": [
-        -1955.14501953125,
-        1092.9266357421875
-      ],
-      "size": [
-        270,
-        78
-      ],
-      "flags": {},
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 172
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            175,
-            176
-          ]
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [
-            177,
-            178
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfyui-inspyrenet-rembg",
-        "ver": "1.1.1",
-        "Node name for S&R": "InspyrenetRembg"
-      },
-      "widgets_values": [
-        "default"
-      ]
-    },
-    {
       "id": 97,
       "type": "Hy3D21ExportMesh",
       "pos": [
@@ -716,13 +587,13 @@
         106
       ],
       "flags": {},
-      "order": 18,
+      "order": 17,
       "mode": 0,
       "inputs": [
         {
           "name": "trimesh",
           "type": "TRIMESH",
-          "link": 179
+          "link": 187
         }
       ],
       "outputs": [
@@ -748,15 +619,15 @@
       "id": 91,
       "type": "Preview3D",
       "pos": [
-        647.8017578125,
-        1516.4930419921875
+        729.3998413085938,
+        1573.02197265625
       ],
       "size": [
         400,
         550
       ],
       "flags": {},
-      "order": 26,
+      "order": 25,
       "mode": 0,
       "inputs": [
         {
@@ -782,9 +653,9 @@
         "Last Time Model File": "Hy21_Mesh.glb",
         "Camera Info": {
           "position": {
-            "x": -2.409613497102219,
-            "y": 9.080497946680794,
-            "z": 2.7598980814867877
+            "x": 4.68396681461791,
+            "y": 3.712369194605184,
+            "z": 5.55470225984192
           },
           "target": {
             "x": 0,
@@ -801,42 +672,6 @@
       ]
     },
     {
-      "id": 88,
-      "type": "INTConstant",
-      "pos": [
-        -1344.94873046875,
-        801.31103515625
-      ],
-      "size": [
-        210,
-        58
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "value",
-          "type": "INT",
-          "links": [
-            165
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfyui-kjnodes",
-        "ver": "1.1.2",
-        "Node name for S&R": "INTConstant",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        50000
-      ],
-      "color": "#1b4669",
-      "bgcolor": "#29699c"
-    },
-    {
       "id": 37,
       "type": "Hy3DMeshGenerator",
       "pos": [
@@ -848,7 +683,7 @@
         178
       ],
       "flags": {},
-      "order": 15,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -882,59 +717,6 @@
       ]
     },
     {
-      "id": 43,
-      "type": "Hy3D21PostprocessMesh",
-      "pos": [
-        -61.86928176879883,
-        679.3651733398438
-      ],
-      "size": [
-        341.3726501464844,
-        154
-      ],
-      "flags": {},
-      "order": 17,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "trimesh",
-          "type": "TRIMESH",
-          "link": 80
-        },
-        {
-          "name": "max_facenum",
-          "type": "INT",
-          "widget": {
-            "name": "max_facenum"
-          },
-          "link": 81
-        }
-      ],
-      "outputs": [
-        {
-          "name": "trimesh",
-          "type": "TRIMESH",
-          "links": [
-            179,
-            182
-          ]
-        }
-      ],
-      "properties": {
-        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
-        "ver": "b25dbd8bc1adb6e1e699c3a2740d3a2358ee4752",
-        "Node name for S&R": "Hy3D21PostprocessMesh",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        true,
-        true,
-        false,
-        40000,
-        false
-      ]
-    },
-    {
       "id": 44,
       "type": "Hy3D21ExportMesh",
       "pos": [
@@ -946,13 +728,13 @@
         106
       ],
       "flags": {},
-      "order": 9,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
           "name": "trimesh",
           "type": "TRIMESH",
-          "link": null
+          "link": 186
         },
         {
           "name": "filename_prefix",
@@ -983,58 +765,18 @@
       ]
     },
     {
-      "id": 96,
-      "type": "Hy3D21ExportMesh",
-      "pos": [
-        -113.97835540771484,
-        1110.5352783203125
-      ],
-      "size": [
-        283.5542907714844,
-        106
-      ],
-      "flags": {},
-      "order": 8,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "trimesh",
-          "type": "TRIMESH",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "glb_path",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
-        "ver": "b25dbd8bc1adb6e1e699c3a2740d3a2358ee4752",
-        "Node name for S&R": "Hy3D21ExportMesh",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "afteruv",
-        "stl",
-        true
-      ]
-    },
-    {
       "id": 20,
       "type": "Hy3DMultiViewsGenerator",
       "pos": [
-        -497.2831115722656,
-        1388.2568359375
+        -415.6849670410156,
+        1444.7857666015625
       ],
       "size": [
         338.5425720214844,
         322
       ],
       "flags": {},
-      "order": 20,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
@@ -1109,47 +851,46 @@
         3,
         1024,
         false,
-        454102150914443,
+        441725044276701,
         "randomize"
       ]
     },
     {
-      "id": 45,
-      "type": "Hy3D21MeshUVWrap",
+      "id": 83,
+      "type": "SaveImageWithAlpha",
       "pos": [
-        -769.2422485351562,
-        1284.7152099609375
+        -1248.8194580078125,
+        1480.45849609375
       ],
       "size": [
-        239.62557983398438,
-        58
+        270,
+        290
       ],
       "flags": {},
-      "order": 19,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
-          "name": "trimesh",
-          "type": "TRIMESH",
-          "link": 182
-        }
-      ],
-      "outputs": [
+          "name": "images",
+          "type": "IMAGE",
+          "link": 175
+        },
         {
-          "name": "trimesh",
-          "type": "TRIMESH",
-          "links": [
-            183
-          ]
+          "name": "mask",
+          "type": "MASK",
+          "link": 178
         }
       ],
+      "outputs": [],
       "properties": {
-        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
-        "ver": "b25dbd8bc1adb6e1e699c3a2740d3a2358ee4752",
-        "Node name for S&R": "Hy3D21MeshUVWrap",
-        "widget_ue_connectable": {}
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "3fcd22f2fe2be69c3229f192362b91888277cbcb",
+        "Node name for S&R": "SaveImageWithAlpha",
+        "aux_id": "kijai/ComfyUI-KJNodes"
       },
-      "widgets_values": []
+      "widgets_values": [
+        "ComfyUI"
+      ]
     },
     {
       "id": 86,
@@ -1159,11 +900,11 @@
         1193.831298828125
       ],
       "size": [
-        224.33358764648438,
+        246.11288452148438,
         66
       ],
       "flags": {},
-      "order": 16,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -1198,46 +939,257 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "Hy3D21ImageWithAlphaInput",
         "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
+        "Node name for S&R": "Hy3D21ImageWithAlphaInput",
         "ver": "9d7ef32509101495a7840b3ae8e718c8d1183305"
       },
       "widgets_values": []
     },
     {
-      "id": 83,
-      "type": "SaveImageWithAlpha",
+      "id": 4,
+      "type": "Hy3D21VAELoader",
       "pos": [
-        -1248.8194580078125,
-        1480.45849609375
+        -758.1572265625,
+        678.0780029296875
       ],
       "size": [
-        270,
-        290
+        279.4253845214844,
+        58
       ],
       "flags": {},
-      "order": 14,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 175
-        },
-        {
-          "name": "mask",
-          "type": "MASK",
-          "link": 178
+          "name": "vae_config",
+          "shape": 7,
+          "type": "HY3D21VAECONFIG",
+          "link": null
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "name": "vae",
+          "type": "HY3DVAE",
+          "links": [
+            61
+          ]
+        }
+      ],
       "properties": {
-        "cnr_id": "comfyui-kjnodes",
-        "ver": "3fcd22f2fe2be69c3229f192362b91888277cbcb",
-        "Node name for S&R": "SaveImageWithAlpha"
+        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
+        "ver": "e439689e4b67fb2af5f487ee26ef3a710be92658",
+        "Node name for S&R": "Hy3D21VAELoader",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "ComfyUI"
+        "Hunyuan3D-vae-v2-1-fp16.ckpt"
+      ]
+    },
+    {
+      "id": 95,
+      "type": "InspyrenetRembg",
+      "pos": [
+        -1955.14501953125,
+        1092.9266357421875
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 172
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            175,
+            176
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            177,
+            178
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-inspyrenet-rembg",
+        "ver": "1.1.1",
+        "Node name for S&R": "InspyrenetRembg",
+        "aux_id": "john-mnz/ComfyUI-Inspyrenet-Rembg"
+      },
+      "widgets_values": [
+        "default"
+      ]
+    },
+    {
+      "id": 69,
+      "type": "LoadImage",
+      "pos": [
+        -1810.1839599609375,
+        1296.0576171875
+      ],
+      "size": [
+        274.080078125,
+        314.0001220703125
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            172
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.64",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "black_bottle.webp",
+        "image"
+      ]
+    },
+    {
+      "id": 45,
+      "type": "Hy3D21MeshUVWrap",
+      "pos": [
+        -632.4407348632812,
+        1274.9720458984375
+      ],
+      "size": [
+        239.62557983398438,
+        58
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "trimesh",
+          "type": "TRIMESH",
+          "link": 188
+        }
+      ],
+      "outputs": [
+        {
+          "name": "trimesh",
+          "type": "TRIMESH",
+          "links": [
+            183
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "visualbruno/ComfyUI-Hunyuan3d-2-1",
+        "ver": "b25dbd8bc1adb6e1e699c3a2740d3a2358ee4752",
+        "Node name for S&R": "Hy3D21MeshUVWrap",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 88,
+      "type": "INTConstant",
+      "pos": [
+        -1344.94873046875,
+        801.31103515625
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "value",
+          "type": "INT",
+          "links": [
+            165
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-kjnodes",
+        "ver": "1.1.2",
+        "Node name for S&R": "INTConstant",
+        "aux_id": "kijai/ComfyUI-KJNodes",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        40000
+      ],
+      "color": "#1b4669",
+      "bgcolor": "#29699c"
+    },
+    {
+      "id": 99,
+      "type": "Hy3D21PostprocessMeshSimple",
+      "pos": [
+        -62.94166946411133,
+        727.4676513671875
+      ],
+      "size": [
+        306.763671875,
+        154
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "trimesh",
+          "type": "TRIMESH",
+          "link": 185
+        }
+      ],
+      "outputs": [
+        {
+          "name": "trimesh",
+          "type": "TRIMESH",
+          "links": [
+            186,
+            187,
+            188
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Hy3D21PostprocessMeshSimple"
+      },
+      "widgets_values": [
+        true,
+        true,
+        true,
+        40001,
+        true
       ]
     }
   ],
@@ -1297,22 +1249,6 @@
       9,
       1,
       "HY3DLATENT"
-    ],
-    [
-      80,
-      9,
-      0,
-      43,
-      0,
-      "TRIMESH"
-    ],
-    [
-      81,
-      34,
-      0,
-      43,
-      1,
-      "INT"
     ],
     [
       85,
@@ -1475,26 +1411,42 @@
       "MASK"
     ],
     [
-      179,
-      43,
+      183,
+      45,
+      0,
+      20,
+      0,
+      "TRIMESH"
+    ],
+    [
+      185,
+      9,
+      0,
+      99,
+      0,
+      "TRIMESH"
+    ],
+    [
+      186,
+      99,
+      0,
+      44,
+      0,
+      "TRIMESH"
+    ],
+    [
+      187,
+      99,
       0,
       97,
       0,
       "TRIMESH"
     ],
     [
-      182,
-      43,
+      188,
+      99,
       0,
       45,
-      0,
-      "TRIMESH"
-    ],
-    [
-      183,
-      45,
-      0,
-      20,
       0,
       "TRIMESH"
     ]
@@ -1517,8 +1469,8 @@
       "id": 3,
       "title": "Mesh Texturing",
       "bounding": [
-        -907.3322143554688,
-        1093.45751953125,
+        -825.734130859375,
+        1149.9864501953125,
         2147.495849609375,
         1034.4346923828125
       ],
@@ -1530,10 +1482,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6588241021083042,
+      "scale": 0.42567011878875016,
       "offset": [
-        2270.6086762071827,
-        -830.9610421435491
+        2093.038779343854,
+        91.08830952856346
       ]
     },
     "frontendVersion": "1.27.10",
