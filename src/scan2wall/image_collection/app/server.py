@@ -27,6 +27,7 @@ async def upload_page(request: Request):
 
 @app.post("/upload")
 async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    print("[INFO] Received file.")
     ts = time.strftime("%Y%m%d-%H%M%S")
     suffix = uuid.uuid4().hex[:6]
     original = Path(file.filename).name if file.filename else "photo.jpg"

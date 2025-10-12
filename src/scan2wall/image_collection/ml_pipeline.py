@@ -55,8 +55,29 @@ def convert_mesh(out_file, fname, mass=None, df=None, ds=None):
     ds = f"--static-friction {ds}" if ds else ""
     df = f"--dynamic-friction {df}" if df else ""
     
-    os.system(f"/bin/bash -lic 'python /workspace/isaaclab/scripts/tools/convert_mesh.py {out_file} /workspace/isaaclab/{fname_new} --kit_args='--headless' {m} {df} {ds}'")
-    print("conversion done")
+    #os.system(f"/bin/bash -lic 'python /workspace/isaaclab/scripts/tools/convert_mesh.py {out_file} /workspace/isaaclab/{fname_new} --kit_args='--headless' {m} {df} {ds}'")
+
+    cmd = (
+        f"python /workspace/isaaclab/scripts/tools/convert_mesh.py "
+        f"{out_file} /workspace/isaaclab/{fname_new} "
+        f"--kit_args='--headless' {m} {df} {ds}"
+    )
+
+    # Spawn in a new process group (detached), but keep a handle to wait later
+    proc = subprocess.Popen(
+        ["/bin/bash", "-lic", cmd],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,  # detaches from parent session
+        text=True
+    )
+
+    for line in proc.stdout:
+        print(line, end="")  # stream live output
+
+    proc.wait()
+
+    print("conversion done :)")
     return f"/workspace/isaaclab/{fname_new}"
     #    --collision-approximation convexHull   --mass 0.35   --com 0 0 0   --inertia 0.00195 0.00195 0.000246   --principal-axes 1 0 0 0   --static-friction 0.6   --dynamic-friction 0.5   --restitution 0.2   --friction-combine average   --restitution-combine min")
 
