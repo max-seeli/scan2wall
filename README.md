@@ -7,11 +7,13 @@ Install uv.
 ```
 uv sync
 uv pip install -e .
+apt-get install ffmpeg
 ```
 and then 
 `uv run src/scan2wall/image_collection/run.py`.
 
 # Comfy-side work server
+```
 #!/bin/bash
 source activate base
 conda activate comfyui
@@ -20,3 +22,4 @@ python main.py &
 
 cd ../
 python server.py
+```

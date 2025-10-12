@@ -7,6 +7,8 @@ import re
 import subprocess
 import os
 
+USE_LLM = True
+USE_SCALING = False
 
 def process_image(job_id: str, image_path: str) -> str:
     """
@@ -20,8 +22,7 @@ def process_image(job_id: str, image_path: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # generate glb mesh file
-    # 1. make a post request to
-    url = "https://8012-hah9c53y9.brevlab.com/process"
+    url = "https://8012-hah9c53y9.brevlab.com/process" # TODO: un-hardcode
     with open(p, "rb") as f:
         resp = requests.post(
             url,
@@ -29,22 +30,28 @@ def process_image(job_id: str, image_path: str) -> str:
             data={"timeout": "300", "job_id": job_id},
             timeout=(10, 600),
         )
-    print("!")
+    print("Request done.")
     resp.raise_for_status()
     out_file = out_dir / f"{job_id}.glb"
-    # out_file = "/workspace/scan2wall/src/scan2wall/image_collection/processed/4b3df0f54ab641a7826b609fea240902.glb"
     print(out_file)
     out_file.write_bytes(resp.content)
 
-    props = get_object_properties(image_path)
-    # print(props)
-    mass = props["weight_kg"]["value"]
-    df = props["friction_coefficients"]["dynamic"]
-    ds = props["friction_coefficients"]["static"]
+    mass = 1.0
+    df = None
+    ds = None
+    scaling = 1.0
+    print("1")
+
+    if USE_LLM:
+        props = get_object_properties(image_path)
+        print(props)
+        mass = props["weight_kg"]["value"]
+        df = props["friction_coefficients"]["dynamic"]
+        ds = props["friction_coefficients"]["static"]
+        scaling = max(props["dimensions_m"]["length"]["value"], props["dimensions_m"]["width"]["value"], props["dimensions_m"]["height"]["value"])
+    if not USE_SCALING:
+        scaling = 1.0
     usd_file = convert_mesh(out_file, f"{job_id}.glb", mass=mass, df=df, ds=ds)
-    # out_file = "/workspace/scan2wall/src/scan2wall/image_collection/processed/4b3df0f54ab641a7826b609fea240902.glb"
-    # usd_file = convert_mesh(out_file, f"{job_id}.glb", mass=None, df=None, ds=None)
-    # usd_file = "/workspace/isaaclab/4b3df0f54ab641a7826b609fea240902.usd"
     make_throwing_anim(usd_file)
     return str(out_file)
 
@@ -54,11 +61,9 @@ def convert_mesh(out_file, fname, mass=None, df=None, ds=None):
     m = f"--mass {mass}" if mass else ""
     ds = f"--static-friction {ds}" if ds else ""
     df = f"--dynamic-friction {df}" if df else ""
-    
-    #os.system(f"/bin/bash -lic 'python /workspace/isaaclab/scripts/tools/convert_mesh.py {out_file} /workspace/isaaclab/{fname_new} --kit_args='--headless' {m} {df} {ds}'")
 
     cmd = (
-        f"python /workspace/isaaclab/scripts/tools/convert_mesh.py "
+        f"python /workspace/scan2wall/isaac_scripts/convert_mesh.py "
         f"{out_file} /workspace/isaaclab/{fname_new} "
         f"--kit_args='--headless' {m} {df} {ds}"
     )
@@ -81,22 +86,11 @@ def convert_mesh(out_file, fname, mass=None, df=None, ds=None):
     return f"/workspace/isaaclab/{fname_new}"
     #    --collision-approximation convexHull   --mass 0.35   --com 0 0 0   --inertia 0.00195 0.00195 0.000246   --principal-axes 1 0 0 0   --static-friction 0.6   --dynamic-friction 0.5   --restitution 0.2   --friction-combine average   --restitution-combine min")
 
-def make_throwing_anim(file):
-    print("Q")
-    # os.system(f"/bin/bash -lic 'python /workspace/isaaclab/scripts/test_place_obj_video.py --video --usd_path_abs \"{file}\"  --kit_args='--no-window''")
-    st = f"/workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab/scripts/test_place_obj_video.py --video --usd_path_abs '{file}' --kit_args='--no-window'"
-    print(st)
-    #result = os.system(st)
-    #cmd = [
-    #    "/bin/bash",
-    #    "-lc",
-    #    f"/workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab/scripts/test_place_obj_video.py --video --usd_path_abs '{file}' --kit_args='--no-window'"
-    #]
-
-    #result = subprocess.run(cmd, text=True)
+def make_throwing_anim(file, scaling=1.0):
+    print("Creating throwing anim")
     cmd = (
-        f"python /workspace/isaaclab/scripts/test_place_obj_video.py "
-        f"--video --usd_path_abs '{file}' --kit_args='--no-window'"
+        f"python /workspace/scan2wall/isaac_scripts/test_place_obj_video.py "
+        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window'"
     )
     subprocess.Popen(
         ["/bin/bash", "-lic", cmd],
@@ -105,34 +99,6 @@ def make_throwing_anim(file):
         start_new_session=True  # fully detached from parent
     )
     print("DONE! :)")
-
-# url = "https://8188-hah9c53y9.brevlab.com/upload/image" # todo: remove hardcoding
-
-# with open(p, "rb") as f:
-#     files = {"file": f}  # or use the correct key your endpoint expects
-#     response = requests.post(url, files=files)
-# print(response.status_code)
-# # Infer object properties
-# properties = get_object_properties(str(p))
-# out = out_dir / f"{p.stem}_properties.json"
-# out.write_text(str(properties))
-
-# process
-# img = cv2.imread(str(p), cv2.IMREAD_COLOR)
-# if img is None:
-#     fail = out_dir / f"{p.stem}_FAILED.txt"
-#     fail.write_text("Could not read uploaded image.")
-#     return str(fail)
-
-# # Example processing: resize to thumbnail and save
-# h, w = img.shape[:2]
-# scale = 256 / max(h, w)
-# new_size = (int(w * scale), int(h * scale))
-# thumb = cv2.resize(img, new_size, interpolation=cv2.INTER_AREA)
-# out = out_dir / f"{p.stem}_thumb.jpg"
-# cv2.imwrite(str(out), thumb)
-
-# return str(out)
 
 if __name__ == "__main__":
     # dir = "/workspace/scan2wall/src/scan2wall/image_collection/processed/"
