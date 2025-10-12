@@ -37,55 +37,61 @@ A hackathon project for NVIDIA's Simulation Hack that combines:
 ## Quick Start
 
 ### Prerequisites
-- Linux with NVIDIA GPU (8GB+ VRAM)
-- Python 3.10+
-- NVIDIA Isaac Sim
-- CUDA Toolkit
-
-### Installation
+- Two brev instances:
+    - One to run Linux with an NVIDIA GPU, Python 3.10+
+    - One to run Isaac Lab with the following tutorial: https://github.com/isaac-sim/isaac-launchable
+### Installation (first instance, Linux)
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/scan2wall.git
+git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
 
 # 2. Copy environment template
 cp .env.example .env
 # Edit .env and add your GOOGLE_API_KEY
+# Edit .env and add your ISAAC_LAB_ADDRESS (address of your other instance running Isaac Lab)
 
 # 3. Install main dependencies
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 uv pip install -e .
 
-# 4. Set up ComfyUI (in separate terminal)
+# 4. Set up ComfyUI (single script, no conda needed)
 cd 3d_gen
-conda create -n comfyui python=3.10 -y
-conda activate comfyui
-bash comfy.sh
+bash setup_comfyui.sh
 bash modeldownload.sh
 ```
 
-See [SETUP.md](SETUP.md) for detailed instructions.
+See [SETUP.md](SETUP.md) for more detailed instructions.
+
+### Installation (second instance, Isaac Lab)
+Start an Isaac instance following this tutorial: https://github.com/isaac-sim/isaac-launchable
+Clone this repo into the Isaac Lab workspace:
+
+```bash
+workspace#git clone https://github.com/max-seeli/scan2wall
+```
+
+#Install main dependencies
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+uv pip install -e .
+```
 
 ### Running
 
-**Terminal 1** - ComfyUI:
+In first instance (Linux):
 ```bash
 cd 3d_gen
-conda activate comfyui
+source .venv/bin/activate
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
 
-**Terminal 2** - ComfyUI API Server:
-```bash
-cd 3d_gen
-conda activate comfyui
-python server.py
-```
-
-**Terminal 3** - Main Upload Server:
+In second instance (IsaacLab):
 ```bash
 uv run src/scan2wall/image_collection/run.py
 ```

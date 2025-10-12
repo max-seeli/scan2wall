@@ -36,7 +36,7 @@
       "camera_azimuths": "0, 90, 180, 270, 0, 180",
       "camera_elevations": "0, 0, 0, 0, 90, -90",
       "view_weights": "1, 0.5, 1, 0.5, 1, 1",
-      "ortho_scale": 1.1000000000000003
+      "ortho_scale": 1.1
     },
     "class_type": "Hy3D21CameraConfig",
     "_meta": {
@@ -235,10 +235,7 @@
   },
   "89": {
     "inputs": {
-      "string": [
-        "114",
-        0
-      ]
+      "string": "whatever"
     },
     "class_type": "StringConstant",
     "_meta": {
@@ -310,18 +307,6 @@
     "class_type": "Hy3D21ExportMesh",
     "_meta": {
       "title": "Hunyuan 3D 2.1 Export Mesh"
-    }
-  },
-  "114": {
-    "inputs": {
-      "seed": 9513871408985,
-      "rows": 1,
-      "string_length": 5,
-      "values": "ABCDEF"
-    },
-    "class_type": "CR Random Panel Codes",
-    "_meta": {
-      "title": "CR Random Panel Codes"
     }
   }
 }

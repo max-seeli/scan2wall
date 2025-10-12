@@ -23,7 +23,12 @@ def process_image(job_id: str, image_path: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # generate glb mesh file
-    url = "https://8012-hah9c53y9.brevlab.com/process"  # TODO: un-hardcode
+    ISAAC_INSTANCE_ADDRESS = os.getenv("ISAAC_INSTANCE_ADDRESS")
+
+    if ISAAC_INSTANCE_ADDRESS is None:
+        raise ValueError("ISAAC_INSTANCE_ADDRESS environment variable not set!")
+
+    url = ISAAC_INSTANCE_ADDRESS
     with open(p, "rb") as f:
         resp = requests.post(
             url,
