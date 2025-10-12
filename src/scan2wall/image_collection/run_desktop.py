@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-VIDEO_DIR = Path("recordings")
+VIDEO_DIR = Path("/workspace/scan2wall/recordings")
 
 app = FastAPI()
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)

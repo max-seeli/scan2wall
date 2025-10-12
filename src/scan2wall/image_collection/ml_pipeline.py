@@ -113,22 +113,20 @@ def convert_mesh(out_file, fname, mass=None, df=None, ds=None):
 
 def make_throwing_anim(file, scaling=1.0, file_name="sim_run"):
     print("Creating throwing anim")
-    counter_file = Path("/workspace/scan2wall/video_counter.txt")
-    counter_file.parent.mkdir(parents=True, exist_ok=True)
-    if counter_file.exists():
-        with open(counter_file, "r") as f:
-            n = int(f.read().strip() or 0)
-    else:
-        n = 0
-    n += 1
-    with open(counter_file, "w") as f:
-        f.write(str(n))
+    existing_numbers = []
+    video_dir = Path("/workspace/scan2wall/recordings")
+    for f in video_dir.glob("*.mp4"):
+        try:
+            existing_numbers.append(int(f.stem))
+        except ValueError:
+            pass
 
-    video_name = f"{n:04d}_{file_name}"
-    print(video_name)
+    next_number = max(existing_numbers, default=0) + 1
+
+    video_name = f"{next_number:05d}.mp4"
     cmd = (
         f"python /workspace/scan2wall/isaac_scripts/test_place_obj_video.py "
-        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window' --video_name '{video_name}.mp4'"
+        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window' --video_name '{video_name}'"
     )
     proc = subprocess.Popen(
         ["/bin/bash", "-lic", cmd],
