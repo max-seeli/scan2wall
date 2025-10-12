@@ -28,6 +28,7 @@ parser.add_argument("--every_n", type=int, default=1, help="Save every Nth frame
 parser.add_argument("--jpg", action="store_true", help="Write JPG instead of PNG (faster/smaller).")
 
 parser.add_argument("--usd_path_abs", type=str, help="Absolute path to USD file to be inserted.")
+parser.add_argument("--scaling_factor", type=float, default=1.0, help="Scaling factor for the imported USD object.")
 
 # NEW: how many captured frames to skip at the start of the video
 parser.add_argument("--skip_first", type=int, default=10, help="Skip the first N frames when encoding the video.")
@@ -87,14 +88,14 @@ def throw_object(prim_path: str, direction=(1.0, 0.0, 0.5), speed=8.0):
     rb.CreateRigidBodyEnabledAttr(True)
     rb.GetVelocityAttr().Set(Gf.Vec3f(float(v[0]), float(v[1]), float(v[2])))
 
-def design_scene():
+def design_scene(scale=1.0):
     cfg_ground = sim_utils.GroundPlaneCfg()
     cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
     cfg_light_distant = sim_utils.DistantLightCfg(intensity=5000.0, color=(0.75, 0.75, 0.75))
     cfg_light_distant.func("/World/lightDistant", cfg_light_distant, translation=(1, 0, 10))
     custom_obj_cfg = sim_utils.UsdFileCfg(
         usd_path=f"{args_cli.usd_path_abs}",
-        scale=(1.0, 1.0, 1.0),
+        scale=(scale, scale, scale),
         collision_props=sim_utils.CollisionPropertiesCfg(),
     )
     custom_obj_cfg.func(
@@ -157,7 +158,7 @@ def main():
     sim.set_camera_view([0.0, -4.0, 4.0], [0.0, 0.0, 3.0])
 
     # Scene
-    design_scene()
+    design_scene(scale=args_cli.scaling_factor)
     build_pyramid("/World/Objects/Pyramid", levels=20, cube_size=0.15, gap=0.00, base_xy=(0.0, 10.0), z0=0.075)
     throw_object("/World/Objects/custom_obj", direction=(0.0, 1.0, 0.1), speed=17.0)
 
