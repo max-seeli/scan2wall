@@ -78,6 +78,42 @@
     button:hover {
       background: #f5f5f5;
     }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #555;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error {
+      color: #d32f2f;
+      background: #ffebee;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+    .success {
+      color: #2e7d32;
+      background: #e8f5e9;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+    .info {
+      color: #1565c0;
+      background: #e3f2fd;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -103,31 +139,94 @@
   <script>
     const fileInput = document.getElementById('file');
     const progress = document.getElementById('progress');
-    const statusBox = document.getElementById('status');
+
+    // Validate file type before upload
+    function isValidImageFile(file) {
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      return validTypes.includes(file.type);
+    }
+
+    // Format file size for display
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // Show status message with appropriate styling
+    function showStatus(message, type = 'info') {
+      progress.innerHTML = `<div class="${type}">${message}</div>`;
+    }
+
+    // Poll job status
+    async function pollJobStatus(jobId) {
+      try {
+        const resp = await fetch(`/job/${jobId}`);
+        const data = await resp.json();
+
+        if (data.status === 'queued') {
+          showStatus('<div class="spinner"></div>Queued for processing...', 'info');
+        } else if (data.status === 'processing') {
+          showStatus('<div class="spinner"></div>Generating 3D mesh and running simulation...', 'info');
+        } else if (data.status === 'done') {
+          showStatus('✅ Complete! Your simulation has been generated.', 'success');
+          return true; // done
+        } else if (data.status === 'error') {
+          showStatus('❌ Processing failed: ' + (data.error || 'Unknown error'), 'error');
+          return true; // done (with error)
+        }
+
+        // Continue polling
+        setTimeout(() => pollJobStatus(jobId), 2000);
+      } catch (e) {
+        showStatus('❌ Failed to check status: ' + e.message, 'error');
+      }
+    }
 
     fileInput.addEventListener('change', async () => {
       if (!fileInput.files.length) return;
+
       const file = fileInput.files[0];
-      progress.textContent = `Uploading: ${file.name} ...`;
+
+      // Validate file type
+      if (!isValidImageFile(file)) {
+        showStatus('❌ Invalid file type. Please upload a JPEG, PNG, WEBP, or GIF image.', 'error');
+        fileInput.value = '';
+        return;
+      }
+
+      // Check file size (warn if > 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        showStatus(`⚠️ Large file (${formatSize(file.size)}). Upload may take longer...`, 'info');
+      } else {
+        showStatus(`<div class="spinner"></div>Uploading ${file.name} (${formatSize(file.size)})...`, 'info');
+      }
 
       const data = new FormData();
       data.append('file', file);
+
       try {
         const resp = await fetch('/upload', { method: 'POST', body: data });
-        console.log(resp);
-        if (resp.status == 201) {
-          progress.textContent = 'Uploaded finished.';
-          return;
+        const result = await resp.json();
+
+        if (resp.status === 201) {
+          showStatus('<div class="spinner"></div>Upload successful! Processing started...', 'success');
+
+          // Start polling for job status
+          if (result.job_id) {
+            setTimeout(() => pollJobStatus(result.job_id), 1000);
+          }
+        } else if (resp.status === 400) {
+          showStatus('❌ ' + (result.detail || 'Invalid file'), 'error');
+        } else {
+          showStatus('❌ Upload failed: ' + (result.detail || 'Server error'), 'error');
         }
       } catch (e) {
-        progress.textContent = 'Upload failed: ' + e;
+        showStatus('❌ Upload failed: ' + e.message + '. Check your connection.', 'error');
       } finally {
         fileInput.value = '';
       }
     });
-
-  
-    
   </script>
 </body>
 </html>
