@@ -12,7 +12,8 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Prompt text enforcing JSON schema
 prompt = """
-You are a metrology assistant. From the image, infer likely real-world physical properties.
+You are a metrology assistant. From the image of an object or a person, infer likely real-world physical properties for 
+a scientific simulation.
 Return ONLY valid JSON in this exact schema:
 
 {
@@ -35,7 +36,7 @@ Return ONLY valid JSON in this exact schema:
 }
 
 Guidelines:
-- Estimate static and dynamic friction coefficients between the object and a generic smooth horizontal surface (e.g., steel or wood table).
+- Estimate static and dynamic friction coefficients between the object/human and a generic smooth horizontal surface (e.g., steel or wood table).
 - Use typical values from physics data for the predicted material(s).
 - Return only the JSON, no prose.
 """
