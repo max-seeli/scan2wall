@@ -2,88 +2,86 @@
 
 **Scan objects and simulate throwing them at a wall using AI and physics.**
 
-A hackathon project for NVIDIA's Simulation Hack that combines:
-- 📱 Phone camera capture
-- 🤖 AI-powered 3D mesh generation (Hunyuan 2.1)
-- 🧠 Material property inference (Gemini 2.0 Flash)
-- 🎮 Physics simulation (NVIDIA Isaac Sim)
-- 🎬 Automatic video recording
+![Demo](images/loop.gif)
 
-## Quick Demo
+A hackathon project for NVIDIA's Simulation Hack that combines phone camera capture, AI-powered 3D mesh generation, material property inference, and realistic physics simulation.
 
-1. Take a photo of any object on your phone
-2. Upload via web interface (QR code provided)
-3. Wait ~1 minute
-4. Watch your object get thrown at a pyramid in a physics simulation
+## How It Works
 
-## Features
+1. 📱 Take a photo of any object on your phone
+2. ⬆️ Upload via web interface (QR code provided)
+3. 🤖 AI generates 3D mesh and infers material properties
+4. 🎮 Object gets thrown at a pyramid in Isaac Sim
+5. 🎬 Watch the simulation video
 
-✅ Mobile-friendly web interface with QR code access
-✅ Real-time job status updates
-✅ AI-powered material property inference (mass, friction)
-✅ State-of-the-art 3D generation (Hunyuan 2.1)
-✅ Realistic physics simulation (Isaac Sim)
-✅ Automatic video recording and encoding
-✅ Error handling and validation
+**Total time: ~1-2 minutes**
 
-## Documentation
+## Tech Stack
 
-- **[SETUP.md](SETUP.md)** - Complete installation and setup guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and technical details
-- **[EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md)** - Future email feature design
-- **[3d_gen/README.md](3d_gen/README.md)** - ComfyUI and model setup
-- **[src/scan2wall/image_collection/README.md](src/scan2wall/image_collection/README.md)** - Upload server details
+- **3D Generation**: [Hunyuan 3D 2.1](https://github.com/Tencent/Hunyuan3D-2) via [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- **Material Analysis**: Google Gemini 2.0 Flash
+- **Physics Simulation**: NVIDIA Isaac Sim
+- **Backend**: FastAPI, Python 3.11
+- **Frontend**: HTML5 + JavaScript
 
 ## Quick Start
 
 ### Prerequisites
-- Two brev instances:
-    - One to run Linux with an NVIDIA GPU, Python 3.10+
-    - One to run Isaac Lab with the following tutorial: https://github.com/isaac-sim/isaac-launchable
-### Installation (first instance, Linux)
 
+**Flexible deployment options:**
+
+**Option A: Two-Instance Setup** (Recommended)
+1. **Linux instance** with NVIDIA GPU (8GB+ VRAM) - for 3D generation
+2. **Isaac Sim instance** - for physics simulation
+
+**Option B: Single-Instance Setup** (For demos/development)
+1. **One powerful machine** with 16GB+ VRAM GPU and Isaac Sim installed
+
+### Installation
+
+**Instance 1 (Linux + GPU):**
 ```bash
-# 1. Clone repository
+# Clone and setup
 git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
 
-# 2. Copy environment template
-cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
-# Edit .env and add your ISAAC_LAB_ADDRESS (address of your other instance running Isaac Lab)
-
-# 3. Install main dependencies
+# Install dependencies
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync
-uv pip install -e .
+uv sync && uv pip install -e .
 
-# 4. Set up ComfyUI (single script, no conda needed)
+# Setup ComfyUI and download models
 cd 3d_gen
 bash setup_comfyui.sh
 bash modeldownload.sh
 ```
 
-See [SETUP.md](SETUP.md) for more detailed instructions.
-
-### Installation (second instance, Isaac Lab)
-Start an Isaac instance following this tutorial: https://github.com/isaac-sim/isaac-launchable
-Clone this repo into the Isaac Lab workspace:
-
+**Instance 2 (Isaac Sim):**
 ```bash
-workspace#git clone https://github.com/max-seeli/scan2wall
+# Follow: https://github.com/isaac-sim/isaac-launchable
+# Then clone repo into workspace
+git clone https://github.com/max-seeli/scan2wall
+cd scan2wall
+uv sync && uv pip install -e .
+# Install ffmpeg
 ```
 
-#Install main dependencies
+### Configuration
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync
-uv pip install -e .
+cp .env.example .env
 ```
+
+Edit `.env`:
+- **Required**: `GOOGLE_API_KEY` - Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- **Required**: `ISAAC_INSTANCE_ADDRESS`
+  - Two-instance: `https://<PORT>-<INSTANCE>.brevlab.com/process`
+  - Single-instance: `http://127.0.0.1:8012/process`
+- **Optional**: `PORT` (default: 49100)
+- **Optional**: Path customization (auto-detected by default)
 
 ### Running
 
-In first instance (Linux):
+**Instance 1 - Terminal 1 (ComfyUI):**
 ```bash
 cd 3d_gen
 source .venv/bin/activate
@@ -91,31 +89,34 @@ cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
 
-In second instance (IsaacLab):
+**Instance 1 - Terminal 2 (ComfyUI API):**
+```bash
+cd 3d_gen
+source .venv/bin/activate
+python server.py
+```
+
+**Instance 2 (Upload Server):**
 ```bash
 uv run src/scan2wall/image_collection/run.py
 ```
 
-Scan the generated QR code or visit the printed URL on your phone.
+Scan the QR code or visit the URL on your phone to start!
 
-## How It Works
+## Features
 
-```
-Phone Photo → Upload Server → Material Inference (Gemini) →
-3D Generation (Hunyuan 2.1) → Mesh Conversion →
-Isaac Sim Physics → Video Recording → Done!
-```
+✅ Mobile-first web interface
+✅ Real-time job status updates
+✅ AI-powered material inference (mass, friction, dimensions)
+✅ State-of-the-art 3D generation
+✅ Realistic physics simulation
+✅ Automatic video recording
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed pipeline documentation.
+## Documentation
 
-## Tech Stack
-
-- **Frontend**: HTML5, JavaScript, Fetch API
-- **Backend**: FastAPI, Python 3.11
-- **3D Generation**: ComfyUI + Hunyuan 2.1
-- **Material Analysis**: Google Gemini 2.0 Flash
-- **Physics**: NVIDIA Isaac Sim
-- **Video**: ffmpeg (H.264 encoding)
+- **[SETUP.md](SETUP.md)** - Detailed installation guide
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and technical details
+- **[EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md)** - Future email feature design
 
 ## Project Structure
 
@@ -126,80 +127,55 @@ scan2wall/
 │   └── material_properties/  # Gemini API integration
 ├── 3d_gen/                  # ComfyUI and 3D generation
 ├── isaac_scripts/           # Isaac Sim simulation scripts
-├── recordings/              # Generated videos
-└── docs/                    # Documentation
+└── recordings/              # Generated videos
 ```
-
-## Configuration
-
-Environment variables (`.env`):
-```bash
-GOOGLE_API_KEY=your_gemini_api_key_here
-PORT=49100
-COMFY_SERVER_URL=http://127.0.0.1:8012
-```
-
-See `.env.example` for full configuration options.
 
 ## API Endpoints
 
-- `GET /` - Upload page (mobile UI)
-- `POST /upload` - Upload image
+- `GET /` - Upload page
+- `POST /upload` - Submit image
 - `GET /job/{job_id}` - Check job status
 - `GET /jobs` - List all jobs (admin)
 
 ## Troubleshooting
 
-**Upload page not accessible from phone?**
-- Ensure phone and server are on same WiFi
-- Check firewall allows port 49100
+**Can't connect from phone?**
+- Ensure same WiFi network
+- Check firewall allows the port
 
 **ComfyUI model not found?**
 - Re-run `modeldownload.sh`
-- Check models are in `3d_gen/ComfyUI/models/`
 
 **Isaac Sim crashes?**
 - Check VRAM usage
-- Try reducing simulation resolution
+- Reduce simulation resolution
 
-See [SETUP.md](SETUP.md) for more troubleshooting tips.
+See [SETUP.md](SETUP.md) for more troubleshooting.
 
-## Future Features
+## Future Ideas
 
-- 📧 Email integration (send photo via email)
+- 📧 Email integration
 - 🎨 Custom simulation settings
-- 📊 Usage dashboard
 - 🌐 Public gallery
 - 🔗 Social media sharing
 
-See [EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md) for email feature design.
+## Built For
 
-## Contributing
+**NVIDIA Simulation Hack** (October 10-12, 2025)
 
-This is a hackathon project! Contributions welcome:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+This project showcases the integration of multiple cutting-edge AI and physics systems:
+- Tencent's Hunyuan 3D 2.1 for image-to-3D generation
+- Google's Gemini 2.0 Flash for intelligent material property inference
+- NVIDIA's Isaac Sim for high-fidelity physics simulation
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Credits
-
-Built for NVIDIA's Simulation Hack hackathon.
-
-Technologies:
-- [NVIDIA Isaac Sim](https://developer.nvidia.com/isaac-sim)
-- [Hunyuan 2.1](https://github.com/Tencent/Hunyuan3D-2) by Tencent
-- [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
-- [Google Gemini](https://ai.google.dev/)
-
-## Contact
-
-Issues: [GitHub Issues](https://github.com/yourusername/scan2wall/issues)
+MIT License - see [LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 
 Special thanks to NVIDIA for hosting the Simulation Hack and providing Isaac Sim access!
+
+## Contact
+
+Issues: [GitHub Issues](https://github.com/max-seeli/scan2wall/issues)

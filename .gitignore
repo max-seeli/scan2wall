@@ -17,6 +17,7 @@ dist/
 .ipynb_checkpoints/
 
 # --- Conda / Poetry / venv ---
+.env
 .env/
 .venv/
 venv/

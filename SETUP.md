@@ -1,242 +1,285 @@
 # scan2wall Setup Guide
 
-Complete installation and setup instructions for the scan2wall project - a tool that generates 3D meshes from phone photos and simulates throwing them at a wall using NVIDIA Isaac Sim.
+Complete installation guide for scan2wall - a tool that generates 3D meshes from phone photos and simulates throwing them at a wall using NVIDIA Isaac Sim.
 
-## Table of Contents
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-  - [1. Core Project Setup](#1-core-project-setup)
-  - [2. ComfyUI and Hunyuan 2.1 Setup](#2-comfyui-and-hunyuan-21-setup)
-  - [3. NVIDIA Isaac Sim Setup](#3-nvidia-isaac-sim-setup)
-- [Configuration](#configuration)
-- [Running the Application](#running-the-application)
-- [Troubleshooting](#troubleshooting)
+---
+
+## Architecture Overview
+
+scan2wall supports two deployment modes:
+
+### Two-Instance Setup (Recommended for production)
+
+1. **Instance 1**: Linux + NVIDIA GPU - runs ComfyUI for 3D generation
+2. **Instance 2**: Isaac Sim - runs physics simulation
+
+Benefits: Distributed processing, easier to scale, specialized environments
+
+### Single-Instance Setup (For development/demos)
+
+1. **One powerful machine**: Runs both ComfyUI and Isaac Sim
+
+Requirements:
+- NVIDIA GPU with **16GB+ VRAM** (RTX 4080/4090, A4000+)
+- **32GB+ RAM**
+- Isaac Sim fully installed
+
+Benefits: Simpler setup, no network latency, lower cost
+
+**Choose the setup that matches your hardware!** This guide covers both.
 
 ---
 
 ## Prerequisites
 
-### System Requirements
-- **OS**: Linux (tested on Ubuntu 20.04+)
-- **GPU**: NVIDIA GPU with CUDA support (RTX series recommended)
-  - Minimum 8GB VRAM for Hunyuan 2.1
-  - 12GB+ VRAM recommended for optimal performance
-- **RAM**: 16GB minimum, 32GB+ recommended
-- **Storage**: ~50GB free space (models + dependencies)
+### Instance 1 (ComfyUI + 3D Generation)
 
-### Software Requirements
-- Python 3.10 or 3.11 (uv will auto-install if needed)
+**Hardware**:
+- NVIDIA GPU with 8GB+ VRAM (RTX series recommended)
+- 16GB+ RAM
+- 50GB free storage (for models)
+
+**Software**:
+- Linux (tested on Ubuntu 20.04+)
 - CUDA Toolkit (11.8 or 12.x)
-- [NVIDIA Isaac Sim](https://developer.nvidia.com/isaac-sim) (2023.1.1 or later)
-- ffmpeg (for video encoding)
-- uv (Python package manager) - auto-installs if missing
+- Python 3.10 or 3.11
+
+### Instance 2 (Isaac Sim)
+
+**Hardware**:
+- NVIDIA GPU with 6GB+ VRAM
+- 16GB+ RAM
+
+**Software**:
+- Isaac Sim 2023.1.1+ (follow [isaac-launchable guide](https://github.com/isaac-sim/isaac-launchable))
+- ffmpeg
+- Python 3.11
 
 ---
 
 ## Installation
 
-### 1. Core Project Setup
+### Instance 1: ComfyUI + 3D Generation
 
-Clone the repository and set up the main Python environment:
+#### 1. Clone Repository
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/scan2wall.git
+git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
+```
 
+#### 2. Install Core Dependencies
+
+```bash
 # Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create virtual environment and install dependencies
+# Install main dependencies
 uv sync
 uv pip install -e .
 ```
 
-### 2. ComfyUI and Hunyuan 2.1 Setup
-
-The 3D mesh generation uses ComfyUI with the Hunyuan 2.1 model.
-
-#### Single-Command Setup
+#### 3. Setup ComfyUI
 
 ```bash
 cd 3d_gen
 
-# Run the unified setup script (uses uv, no conda needed)
+# Run setup script (creates venv, installs PyTorch, ComfyUI, custom nodes)
 bash setup_comfyui.sh
-```
 
-This script will automatically:
-- Create a Python 3.10 virtual environment with uv
-- Clone ComfyUI repository
-- Install PyTorch with CUDA support
-- Install all custom nodes and dependencies (including LayerStyle and LightGradient)
-- Build CUDA extensions for Hunyuan 3D
-- Copy custom node configurations
-
-**Time**: ~10-15 minutes depending on your internet speed.
-
-#### Download Models
-
-After setup completes:
-
-```bash
-# Still in 3d_gen directory
+# Download Hunyuan 3D 2.1 models (~8GB)
 bash modeldownload.sh
 ```
 
-This downloads the Hunyuan 2.1 model weights (~8GB total):
-- DIT model (diffusion transformer)
-- VAE model (variational autoencoder)
+**Time**: ~15-20 minutes total
 
-**Time**: ~5-10 minutes depending on your internet speed.
-
-#### Test ComfyUI
+#### 4. Verify ComfyUI
 
 ```bash
-# Activate the environment
 source .venv/bin/activate
-
-# Start ComfyUI
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
 
-Open `http://localhost:8188` in your browser. You should see the ComfyUI interface.
+Open `http://localhost:8188` in your browser. You should see the ComfyUI interface. Load and test the workflow at `3d_gen/workflows/image_to_3D_fast.json`.
 
-Load the workflow file:
-- Click "Load" in ComfyUI
-- Navigate to `3d_gen/workflows/image_to_3D_fast.json`
-- Load it
+### Instance 2: Isaac Sim
 
-Try generating a 3D mesh with a test image to verify everything works.
+#### 1. Install Isaac Sim
 
-### 3. NVIDIA Isaac Sim Setup
+Follow the [isaac-launchable tutorial](https://github.com/isaac-sim/isaac-launchable) to set up your Isaac Sim instance.
 
-#### Step 1: Install Isaac Sim
-
-1. Download Isaac Sim from the [NVIDIA Developer Portal](https://developer.nvidia.com/isaac-sim)
-2. Follow the [official installation guide](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/index.html)
-3. Install to `/workspace/isaaclab` or update paths in the code
-
-#### Step 2: Install IsaacLab
+#### 2. Clone Repository
 
 ```bash
-# Clone IsaacLab (if not already installed with Isaac Sim)
-cd /workspace
-git clone https://github.com/isaac-sim/IsaacLab.git isaaclab
-cd isaaclab
-
-# Run the installation script
-./isaaclab.sh --install
+# Inside Isaac workspace
+git clone https://github.com/max-seeli/scan2wall
+cd scan2wall
 ```
 
-#### Step 3: Verify Isaac Sim
+#### 3. Install Dependencies
 
 ```bash
-cd /workspace/isaaclab
-./isaaclab.sh -p scripts/tutorials/00_sim/create_empty.py
-```
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-You should see a window with an empty Isaac Sim scene.
+# Install project dependencies
+uv sync
+uv pip install -e .
+
+# Install ffmpeg (required for video encoding)
+sudo apt-get install ffmpeg
+```
 
 ---
 
 ## Configuration
 
-### Environment Variables
-
-Create a `.env` file in the project root:
+### 1. Create Environment File
 
 ```bash
+cd scan2wall
 cp .env.example .env
 ```
 
-Edit `.env` and add your API keys:
+### 2. Configure Environment Variables
+
+Edit `.env` with your settings:
+
+#### Required Variables
+
+**`GOOGLE_API_KEY`**
+- **Purpose**: Authentication for Gemini 2.0 Flash (material property inference)
+- **Get it**: [Google AI Studio](https://makersuite.google.com/app/apikey)
+- **Example**: `GOOGLE_API_KEY=AIzaSyD...your_key_here`
+
+**`ISAAC_INSTANCE_ADDRESS`**
+- **Purpose**: URL of your Isaac Sim instance running the ComfyUI API
+- **Format**: `https://<PORT>-<INSTANCE_NAME>.brevlab.com/process`
+- **Example**: `ISAAC_INSTANCE_ADDRESS=https://8012-myinstance.brevlab.com/process`
+
+#### Optional Variables
+
+**`PORT`**
+- **Purpose**: Port for the upload server
+- **Default**: 49100
+- **Example**: `PORT=49100`
+
+**`COMFY_SERVER_URL`**
+- **Purpose**: URL of ComfyUI API server
+- **Default**: http://127.0.0.1:8012
+- **Change if**: Running ComfyUI on a different machine
+- **Example**: `COMFY_SERVER_URL=http://192.168.1.100:8012`
+
+**`COMFY_INPUT_DIR`**
+- **Purpose**: Directory where images are copied for ComfyUI processing
+- **Default**: ~/scan2wall/3d_gen/input
+- **Example**: `COMFY_INPUT_DIR=/home/user/scan2wall/3d_gen/input`
+
+### Complete .env Example (Two-Instance Setup)
 
 ```bash
-# Google Gemini API (for material property inference)
-GOOGLE_API_KEY=your_gemini_api_key_here
+# Required
+GOOGLE_API_KEY=AIzaSyD...your_key_here
+ISAAC_INSTANCE_ADDRESS=https://8012-myinstance.brevlab.com/process
 
-# Server configuration
-PORT=49100
-
-# ComfyUI server URL (change if running remotely)
-COMFY_SERVER_URL=http://127.0.0.1:8012
-
-# ComfyUI input directory
-COMFY_INPUT_DIR=~/scan2wall/3d_gen/input
+# Optional (uncomment to customize)
+# PORT=49100
+# COMFY_SERVER_URL=http://127.0.0.1:8012
+# COMFY_INPUT_DIR=~/scan2wall/3d_gen/input
 ```
 
-### Getting API Keys
+### Single-Instance Configuration
 
-**Google Gemini API**:
-1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Create an API key
-3. Add to `.env` file
+If running everything on one machine, update your `.env`:
 
-### Server URLs
+```bash
+# Required
+GOOGLE_API_KEY=AIzaSyD...your_key_here
 
-If running ComfyUI on a different machine (e.g., cloud GPU):
-1. Update `COMFY_SERVER_URL` in `.env`
-2. Update the hardcoded URL in `src/scan2wall/image_collection/ml_pipeline.py` line 24
+# Point to local ComfyUI API (not remote instance)
+ISAAC_INSTANCE_ADDRESS=http://127.0.0.1:8012/process
+
+# Optional: Custom paths
+# PROJECT_ROOT=/home/user/scan2wall
+# ISAAC_WORKSPACE=/home/user/isaac_workspace
+# USD_OUTPUT_DIR=/home/user/isaac_workspace
+```
+
+**Key difference**: `ISAAC_INSTANCE_ADDRESS` uses `127.0.0.1` (localhost) instead of a remote URL.
+
+**Path configuration**: All paths auto-detect from your repository location. Only set custom paths if:
+- Using non-standard directory structure
+- Isaac Sim installed in custom location
+- Want USD files saved to specific directory
 
 ---
 
 ## Running the Application
 
-The application has three main components that need to run simultaneously:
+**Note**: These steps work for both single-instance and two-instance setups. For single-instance, run all terminals on the same machine.
 
-### Terminal 1: ComfyUI Backend
+You need **three terminal sessions** running simultaneously:
+
+### Instance 1 - Terminal 1: ComfyUI Backend
 
 ```bash
-cd 3d_gen
+cd scan2wall/3d_gen
 source .venv/bin/activate
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
 
-### Terminal 2: ComfyUI API Server
+**What it does**: Runs the ComfyUI web interface and workflow engine
+
+### Instance 1 - Terminal 2: ComfyUI API Server
 
 ```bash
-cd 3d_gen
+cd scan2wall/3d_gen
 source .venv/bin/activate
 python server.py
 ```
 
-This runs on port 8012 and handles image-to-3D conversion requests.
+**What it does**: HTTP wrapper around ComfyUI for image-to-3D conversion (runs on port 8012)
 
-### Terminal 3: Main Upload Server
+### Instance 2 - Terminal 3: Upload Server
 
 ```bash
 cd scan2wall
-source .venv/bin/activate  # or: uv shell
 uv run src/scan2wall/image_collection/run.py
 ```
 
-This starts the main web server on port 49100 (configurable via PORT env var).
+**What it does**: Main upload server that coordinates the entire pipeline (runs on port 49100)
 
 ### Accessing the Application
 
-1. The server will print a URL and generate a QR code
-2. Scan the QR code with your phone or visit the URL
-3. Take a photo and it will automatically upload and process
+The server will:
+1. Print a URL (e.g., `http://192.168.1.100:49100`)
+2. Generate a QR code saved as `upload_page_qr.png`
 
-**Alternative**: Use `run_desktop.py` for testing without a phone:
+**From your phone**:
+- Scan the QR code, or
+- Type the URL directly
+
+**For testing without phone**:
 ```bash
 uv run src/scan2wall/image_collection/run_desktop.py
 ```
 
 ---
 
-## How It Works
+## Pipeline Flow
 
-1. **Capture**: User takes photo on phone via web interface
-2. **Upload**: Image automatically uploads to FastAPI server
-3. **Material Inference**: Gemini 2.0 Flash analyzes image for physical properties (mass, friction, etc.)
-4. **3D Generation**: ComfyUI + Hunyuan 2.1 generates 3D mesh (GLB format)
-5. **Mesh Conversion**: GLB → USD with physics properties for Isaac Sim
-6. **Simulation**: Isaac Sim throws object at pyramid of blocks
-7. **Recording**: Simulation recorded to MP4 video (saved to `recordings/`)
+Once running, here's what happens when you upload an image:
+
+1. **Upload** (1-5s) - Image sent to server, job created
+2. **Material Inference** (2-5s) - Gemini analyzes physical properties
+3. **3D Generation** (30-60s) - Hunyuan 2.1 creates 3D mesh
+4. **Mesh Conversion** (5-10s) - GLB converted to USD with physics
+5. **Simulation** (10-20s) - Isaac Sim runs throwing simulation
+6. **Video Output** - Result saved to `recordings/sim_run.mp4`
+
+**Total time: 50-100 seconds**
 
 ---
 
@@ -244,67 +287,141 @@ uv run src/scan2wall/image_collection/run_desktop.py
 
 ### ComfyUI Issues
 
-**Problem**: "Model not found" error
-- **Solution**: Re-run `modeldownload.sh` and ensure models are in `ComfyUI/models/`
+**Problem**: Model not found error
+
+**Solution**:
+```bash
+cd 3d_gen
+bash modeldownload.sh
+# Verify models exist in ComfyUI/models/hunyuan3d_dit/
+```
 
 **Problem**: CUDA out of memory
-- **Solution**: Reduce batch size or use smaller model variant in workflow
+
+**Solution**:
+- Close other GPU applications
+- Restart ComfyUI
+- Consider using smaller batch size in workflow
+
+**Problem**: Port 8188 already in use
+
+**Solution**:
+```bash
+lsof -ti:8188 | xargs kill -9
+```
 
 ### Isaac Sim Issues
 
-**Problem**: "Cannot open display" error
-- **Solution**: Isaac Sim needs X11 or use headless mode with `--headless` flag
+**Problem**: Cannot open display error
+
+**Solution**:
+- Use headless mode with `--kit_args='--headless'` flag
+- Or ensure X11 is configured if running with GUI
 
 **Problem**: Isaac Sim crashes during simulation
-- **Solution**: Check VRAM usage. Close other GPU applications.
+
+**Solution**:
+- Check VRAM usage with `nvidia-smi`
+- Close other GPU applications
+- Reduce simulation resolution in `test_place_obj_video.py`
 
 ### Server Issues
 
-**Problem**: Port already in use
-- **Solution**: Change PORT in `.env` or kill process using the port:
-  ```bash
-  lsof -ti:49100 | xargs kill -9
-  ```
-
 **Problem**: Can't connect from phone
-- **Solution**:
-  - Ensure phone and server are on same WiFi network
-  - Check firewall allows port 49100
-  - Try using the public IP instead of local IP
+
+**Solution**:
+1. Verify phone and server are on same WiFi network
+2. Check firewall allows port 49100:
+   ```bash
+   sudo ufw allow 49100
+   ```
+3. Use actual IP address (not localhost)
+4. Try accessing from phone browser directly: `http://<server-ip>:49100`
+
+**Problem**: Port already in use
+
+**Solution**:
+```bash
+# Change PORT in .env, or kill existing process:
+lsof -ti:49100 | xargs kill -9
+```
+
+**Problem**: Job stuck in "processing" status
+
+**Solution**:
+1. Check ComfyUI server logs in Terminal 2
+2. Verify ComfyUI API server is running
+3. Check `/jobs` endpoint for error details: `http://localhost:49100/jobs`
 
 ### Pipeline Issues
 
-**Problem**: Job stuck in "processing" status
-- **Solution**:
-  - Check ComfyUI server logs
-  - Verify 3D_gen server is running
-  - Check `/jobs` endpoint for error details
-
 **Problem**: Invalid mesh generated
-- **Solution**:
-  - Try a different photo with better lighting
-  - Ensure object is clearly visible and centered
-  - Avoid blurry or dark images
+
+**Solution**:
+- Use clear, well-lit photos
+- Ensure object is centered and visible
+- Avoid blurry or dark images
+- Try a different angle
+
+**Problem**: Gemini API errors
+
+**Solution**:
+- Verify `GOOGLE_API_KEY` is set correctly in `.env`
+- Check API key is active at [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Check API quota/rate limits
+
+### Path Configuration Issues
+
+**Problem**: "File not found" errors for isaac_scripts or assets.csv
+
+**Solution**:
+1. Check path configuration:
+   ```bash
+   python -m scan2wall.utils.paths
+   ```
+2. Verify all paths exist and are correct
+3. If using custom paths, ensure they're set in `.env`:
+   ```bash
+   PROJECT_ROOT=/your/custom/path
+   ISAAC_WORKSPACE=/your/isaac/path
+   ```
+
+**Problem**: USD files not found by Isaac Sim
+
+**Solution**:
+- Check `USD_OUTPUT_DIR` matches where Isaac Sim expects files
+- Default is `/workspace/isaaclab` - change if Isaac is elsewhere
+- Ensure output directory has write permissions
+
+**Problem**: Can't find convert_mesh.py or test_place_obj_video.py
+
+**Solution**:
+- Verify `ISAAC_SCRIPTS_DIR` points to `isaac_scripts/` directory
+- Default auto-detects from project root
+- Set manually if using custom layout:
+  ```bash
+  ISAAC_SCRIPTS_DIR=/path/to/scan2wall/isaac_scripts
+  ```
 
 ---
 
 ## Development Tips
 
-### Checking Job Status
+### Check Job Status
 
-Visit `http://localhost:49100/jobs` to see all processing jobs and their statuses.
+Visit `http://localhost:49100/jobs` to see all jobs and their current status.
 
-### Testing Without Phone
+### Test Without Phone
 
-Use `run_desktop.py` for local testing with file upload dialog:
+Use the desktop version for local testing:
 ```bash
 uv run src/scan2wall/image_collection/run_desktop.py
 ```
 
-### Debugging ML Pipeline
+### Debug ML Pipeline
 
-Test the pipeline directly:
-```python
+Test pipeline components individually:
+```bash
 cd src/scan2wall/image_collection
 python ml_pipeline.py
 ```
@@ -313,27 +430,45 @@ python ml_pipeline.py
 
 Simulation videos are saved to `recordings/` in the project root.
 
+### Check Logs
+
+All three terminals show live logs. Watch for:
+- Upload confirmations
+- Gemini API responses
+- ComfyUI progress
+- Isaac Sim simulation status
+
 ---
 
 ## Performance Optimization
 
-- **ComfyUI**: Use `--highvram` flag if you have 24GB+ VRAM
-- **Isaac Sim**: Reduce simulation steps or resolution for faster processing
-- **Caching**: ComfyUI caches models in memory after first load
+**ComfyUI**:
+- Use `--highvram` flag if you have 24GB+ VRAM
+- Models are cached in memory after first load (~20s speedup)
 
----
+**Isaac Sim**:
+- Reduce simulation steps in `test_place_obj_video.py` for faster processing
+- Lower video resolution for smaller file sizes
 
-## Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/scan2wall/issues)
-- **Isaac Sim Docs**: https://docs.omniverse.nvidia.com/isaacsim/
-- **ComfyUI Docs**: https://github.com/comfyanonymous/ComfyUI
+**Caching**:
+- ComfyUI keeps models loaded between generations
+- First generation takes longer (~60s), subsequent ones faster (~30s)
 
 ---
 
 ## Next Steps
 
-After setup, see:
-- `ARCHITECTURE.md` - System architecture and data flow
-- `EMAIL_INTEGRATION.md` - Future email-to-simulation feature
-- `README.md` - Quick start guide
+After successful setup:
+
+- Read **[ARCHITECTURE.md](ARCHITECTURE.md)** for technical details
+- Check **[README.md](README.md)** for quick reference
+- See **[EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md)** for planned features
+
+---
+
+## Getting Help
+
+- **Issues**: [GitHub Issues](https://github.com/max-seeli/scan2wall/issues)
+- **Isaac Sim Docs**: https://docs.omniverse.nvidia.com/isaacsim/
+- **ComfyUI Docs**: https://github.com/comfyanonymous/ComfyUI
+- **Hunyuan 3D**: https://github.com/Tencent/Hunyuan3D-2

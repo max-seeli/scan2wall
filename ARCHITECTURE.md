@@ -1,371 +1,209 @@
 # scan2wall Architecture
 
-Technical architecture and data flow documentation for the scan2wall project.
+Technical architecture for the scan2wall project - a pipeline that transforms 2D photos into physics-based 3D simulations.
 
 ## System Overview
 
-scan2wall is a multi-stage pipeline that transforms a 2D photo into a physics-based 3D simulation. The system consists of four main components that communicate via HTTP APIs and file system.
+scan2wall is a multi-stage pipeline with four main components communicating via HTTP APIs and file system.
 
 ```
-┌─────────────┐
-│   Phone     │
-│  (Camera)   │
-└──────┬──────┘
-       │ HTTP POST
-       │ (image file)
-       ▼
-┌─────────────────────────────────────────────────────────┐
-│                  FastAPI Upload Server                   │
-│              (scan2wall/image_collection)                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │  Routes:                                            │ │
-│  │  • POST /upload  - Receive image                   │ │
-│  │  • GET /job/{id} - Job status polling              │ │
-│  │  • GET /jobs     - List all jobs                   │ │
-│  └────────────────────────────────────────────────────┘ │
-└────────┬─────────────────────────────────────────┬──────┘
-         │                                         │
-         │ 1. Image saved to disk                  │
-         │ 2. Job queued                           │
-         │                                         │
-         ▼                                         ▼
-┌──────────────────┐                    ┌──────────────────┐
-│  Gemini 2.0 API  │                    │  Background Job  │
-│  (ML Pipeline)   │                    │    Processing    │
-└────────┬─────────┘                    └────────┬─────────┘
-         │                                       │
-         │ Material Properties                   │
-         │ (mass, friction, etc.)                │
-         │                                       │
-         └───────────────┬───────────────────────┘
-                         │
-                         ▼
-         ┌───────────────────────────────┐
-         │   ComfyUI API Server          │
-         │   (3d_gen/server.py)          │
-         │                               │
-         │   • POST /process             │
-         │   • Returns GLB mesh          │
-         └───────────┬───────────────────┘
-                     │
-                     │ HTTP POST (image)
-                     │
-                     ▼
-         ┌───────────────────────────────┐
-         │   ComfyUI Worker              │
-         │   (Hunyuan 2.1 Model)         │
-         │                               │
-         │   • Image → 3D mesh           │
-         │   • Outputs GLB format        │
-         └───────────┬───────────────────┘
-                     │
-                     │ GLB file saved
-                     │
-                     ▼
-         ┌───────────────────────────────┐
-         │   Mesh Converter              │
-         │   (isaac_scripts/)            │
-         │                               │
-         │   • GLB → USD format          │
-         │   • Applies physics props     │
-         └───────────┬───────────────────┘
-                     │
-                     │ USD file
-                     │
-                     ▼
-         ┌───────────────────────────────┐
-         │   NVIDIA Isaac Sim            │
-         │   (Physics Simulation)        │
-         │                               │
-         │   • Load USD mesh             │
-         │   • Create pyramid target     │
-         │   • Throw object              │
-         │   • Record video              │
-         └───────────┬───────────────────┘
-                     │
-                     │ MP4 video
-                     │
-                     ▼
-              [recordings/ dir]
+Phone (Camera)
+     │
+     ├──> FastAPI Upload Server (port 49100)
+     │         │
+     │         ├──> Gemini 2.0 Flash API (material properties)
+     │         │
+     │         └──> ComfyUI API Server (port 8012)
+     │                   │
+     │                   └──> Hunyuan 3D 2.1 (GLB mesh generation)
+     │                             │
+     │                             └──> Mesh Converter (GLB → USD)
+     │                                       │
+     │                                       └──> Isaac Sim (physics + video)
+     │
+     └──> Video output (recordings/)
 ```
+
+---
+
+## Key Technologies
+
+### 1. Hunyuan 3D 2.1 (Image-to-3D Generation)
+
+**What**: Tencent's state-of-the-art image-to-3D model
+**Role**: Converts 2D photos into 3D meshes
+
+- Runs via ComfyUI node-based workflow system
+- Generates GLB format (GL Transmission Format)
+- ~30-60 seconds generation time
+- Requires 6-8GB VRAM
+
+**Workflow**: `3d_gen/workflows/image_to_3D_fast.json`
+
+### 2. ComfyUI (Workflow Engine)
+
+**What**: Node-based workflow system for AI models
+**Role**: Orchestrates the 3D generation pipeline
+
+- Backend runs on port 8188
+- Custom HTTP API wrapper on port 8012
+- Manages model loading and execution
+- Supports custom nodes and extensions
+
+**Custom Nodes Used**:
+- ComfyUI-Hunyuan3d-2-1 (main 3D generation)
+- ComfyUI-Inspyrenet-Rembg (background removal)
+- ComfyUI_LayerStyle (image preprocessing)
+- ComfyUI-KJNodes (utilities)
+
+### 3. Google Gemini 2.0 Flash (Material Inference)
+
+**What**: Google's multimodal LLM
+**Role**: Analyzes images to infer physical properties
+
+Extracts:
+- Object type and materials
+- Mass (kg)
+- Dimensions (meters)
+- Friction coefficients (static/dynamic)
+- Rigidity characteristics
+
+**Example output**:
+```json
+{
+  "object_type": "coffee mug",
+  "weight_kg": {"value": 0.35},
+  "dimensions_m": {
+    "length": {"value": 0.08},
+    "width": {"value": 0.08},
+    "height": {"value": 0.10}
+  },
+  "friction_coefficients": {
+    "static": 0.6,
+    "dynamic": 0.5
+  }
+}
+```
+
+### 4. NVIDIA Isaac Sim (Physics Simulation)
+
+**What**: NVIDIA's robotics simulation platform
+**Role**: Runs physics-based throwing simulation
+
+- Converts USD mesh with physics properties
+- Creates pyramid target (20 levels of cubes)
+- Throws object at 17 m/s
+- Records video at 1920×1080
+- Physics runs at 100 FPS (dt=0.01)
+
+**Output**: MP4 video encoded with ffmpeg (H.264)
+
+---
+
+## Data Flow
+
+### Step 1: Upload
+- User captures photo via mobile web interface
+- Image validated (JPEG/PNG/WEBP/GIF, signature check)
+- Saved to `uploads/YYYYMMDD-HHMMSS-{uuid}-{filename}`
+- Job created with status: `queued`
+
+### Step 2: Material Analysis
+- Image sent to Gemini 2.0 Flash API
+- Response parsed for physical properties
+- Properties stored with job metadata
+
+### Step 3: 3D Generation
+- Image posted to ComfyUI API server
+- Server copies image to ComfyUI input directory
+- Workflow queued with Hunyuan 3D 2.1 model
+- GLB mesh generated and returned
+- Saved to `processed/{job_id}.glb`
+
+### Step 4: Mesh Conversion
+- GLB converted to USD format (Isaac Sim compatible)
+- Physics properties applied from Gemini inference:
+  - Mass
+  - Static/dynamic friction
+  - Collision geometry
+- USD saved to Isaac workspace
+
+### Step 5: Simulation
+- Isaac Sim spawned in detached process
+- Scene setup: ground plane, lighting, pyramid
+- Custom object loaded from USD
+- Throwing velocity applied (direction + speed)
+- Simulation recorded for 200 steps (~2 seconds)
+- Video encoded and saved to `recordings/`
+
+**Job status**: `queued` → `processing` → `done`/`error`
 
 ---
 
 ## Component Details
 
-### 1. Frontend (Mobile Web Interface)
-
-**Location**: `src/scan2wall/image_collection/app/templates/upload.html`
-
-**Technologies**: HTML5, JavaScript (ES6+), Fetch API
-
-**Features**:
-- Camera capture with `capture="environment"` attribute (opens rear camera)
-- Client-side file validation (JPEG, PNG, WEBP, GIF)
-- File size checking and warnings
-- Auto-upload on image selection
-- Real-time job status polling
-- Visual feedback (spinner, success/error states)
-
-**User Flow**:
-1. User opens URL (via QR code or direct link)
-2. Taps "Take photo" button
-3. Camera opens, user takes photo
-4. Frontend validates file type and size
-5. Upload begins automatically
-6. Status updates via polling every 2 seconds
-7. Shows completion or error message
-
-### 2. Upload Server
+### FastAPI Upload Server
 
 **Location**: `src/scan2wall/image_collection/app/server.py`
 
-**Technologies**: FastAPI, Uvicorn, Python 3.11+
-
 **Endpoints**:
+- `GET /` - Serve upload page
+- `POST /upload` - Receive image, create job
+- `GET /job/{job_id}` - Poll job status
+- `GET /jobs` - Admin view of all jobs
 
-| Endpoint | Method | Purpose | Response |
-|----------|--------|---------|----------|
-| `/` | GET | Serve upload page | HTML |
-| `/upload` | POST | Receive image upload | `{job_id, status, message}` |
-| `/job/{job_id}` | GET | Check job status | `{status, filename, error}` |
-| `/jobs` | GET | List all jobs (admin) | `{jobs: [...]}` |
+**Features**:
+- Background task processing
+- In-memory job storage
+- File validation (signature + Pillow verification)
+- Real-time status updates
 
-**Image Validation**:
-- File signature check using `imghdr` (prevents malicious files)
-- Pillow verification (ensures valid image structure)
-- Supported: JPEG, PNG, WEBP, GIF
-
-**Job Management**:
-```python
-JOBS = {
-    "job_id": {
-        "id": str,
-        "filename": str,
-        "path": str,
-        "status": "queued" | "processing" | "done" | "error",
-        "created_at": float,
-        "processed_path": str | None,
-        "error": str | None
-    }
-}
-```
-
-**Background Processing**:
-- Uses FastAPI `BackgroundTasks`
-- Non-blocking: user gets immediate response
-- Job status persisted in memory (note: resets on server restart)
-
-### 3. ML Pipeline
-
-**Location**: `src/scan2wall/image_collection/ml_pipeline.py`
-
-**Process Flow**:
-
-#### Step 1: Material Property Inference
-```python
-get_object_properties(image_path) -> dict
-```
-
-Uses **Gemini 2.0 Flash** to analyze the image and infer:
-- Object type and use case
-- Materials (with probabilities)
-- Rigidity (rigid vs deformable)
-- Dimensions (length, width, height in meters)
-- Weight (kg)
-- Friction coefficients (static and dynamic)
-- Confidence score
-
-**Sample Output**:
-```json
-{
-  "object_type": "coffee mug",
-  "materials": [{"name": "ceramic", "prob": 0.9}],
-  "weight_kg": {"value": 0.35},
-  "friction_coefficients": {
-    "static": 0.6,
-    "dynamic": 0.5
-  },
-  "confidence_overall": 0.85
-}
-```
-
-#### Step 2: 3D Mesh Generation
-```python
-POST https://[comfyui-server]:8012/process
-  Body: multipart/form-data
-    - file: image file
-    - timeout: 300
-    - job_id: unique identifier
-
-  Returns: GLB file (binary)
-```
-
-**Model**: Hunyuan 2.1 (Tencent's image-to-3D model)
-- State-of-the-art quality
-- ~30-60 seconds generation time
-- Outputs GLB (GL Transmission Format)
-
-#### Step 3: Mesh Conversion
-```python
-convert_mesh(glb_path, output_name, mass, friction_static, friction_dynamic)
-```
-
-Converts GLB → USD (Universal Scene Description) format:
-- Applies physics properties from Gemini inference
-- Sets mass, friction coefficients
-- Configures collision properties
-- Uses Isaac Sim's mesh converter tool
-
-**Command**:
-```bash
-python /workspace/isaaclab/scripts/tools/convert_mesh.py \
-  input.glb output.usd \
-  --kit_args='--headless' \
-  --mass 0.35 \
-  --static-friction 0.6 \
-  --dynamic-friction 0.5
-```
-
-#### Step 4: Simulation Trigger
-```python
-make_throwing_anim(usd_path)
-```
-
-Spawns detached Isaac Sim process:
-- Loads USD mesh
-- Runs `test_place_obj_video.py`
-- Records simulation to MP4
-- Runs in background (fire-and-forget)
-
-### 4. ComfyUI Server
+### ComfyUI API Wrapper
 
 **Location**: `3d_gen/server.py`
 
-**Purpose**: HTTP wrapper around ComfyUI for image-to-3D conversion
-
-**Technology Stack**:
-- FastAPI
-- ComfyUI (node-based workflow system)
-- Hunyuan 2.1 model nodes
-
 **Process**:
-1. Receives image via POST
-2. Saves to temporary directory
-3. Copies to ComfyUI input directory
-4. Loads workflow JSON template
-5. Updates workflow nodes with:
-   - Input image path
-   - Unique output prefix (job_id)
-6. Queues prompt to ComfyUI on port 8188
-7. Polls output directory for GLB file
-8. Returns GLB file when ready
+1. Receives image via POST to `/process`
+2. Copies to ComfyUI input directory
+3. Loads workflow template JSON
+4. Updates nodes with job-specific data
+5. Queues prompt to ComfyUI (port 8188)
+6. Polls output directory for GLB file
+7. Returns GLB binary data
 
-**Workflow Nodes**:
+**Key Nodes**:
 - Node 112: Load Image
 - Node 89: Save Model (GLB output)
 
-**Custom Nodes Available**:
-- ComfyUI_LayerStyle: Photoshop-like layer effects (drop shadows, gradients, etc.)
-- ComfyUI_LightGradient: Advanced gradient generation
-- ComfyUI-KJNodes: Various utility nodes
-- ComfyUI_Comfyroll_CustomNodes: Additional workflow nodes
-
-### 5. Isaac Sim Integration
+### Isaac Sim Integration
 
 **Location**: `isaac_scripts/test_place_obj_video.py`
 
-**Simulation Setup**:
-
-```python
-# Scene elements
+**Scene Elements**:
 - Ground plane
 - Distant light
-- Custom USD object (loaded from conversion)
-- Pyramid of 20 levels (blue cubes)
-
-# Physics configuration
-- dt = 0.01 (100 FPS physics)
-- Rigid body dynamics
-- Collision detection
-```
+- Custom USD object (user's mesh)
+- Pyramid: 20 levels of blue cubes
 
 **Throwing Mechanics**:
 ```python
 throw_object(
     prim_path="/World/Objects/custom_obj",
-    direction=(0.0, 1.0, 0.1),  # mostly Y, slight up
+    direction=(0.0, 1.0, 0.1),  # forward + slight up
     speed=17.0  # m/s
 )
 ```
 
-Sets initial linear velocity on rigid body:
-- Direction normalized to unit vector
-- Velocity = direction × speed
-- Applied via `UsdPhysics.RigidBodyAPI`
-
 **Video Recording**:
-- Uses `omni.kit.viewport.utility` (not Replicator)
-- Captures at 1920×1080 by default
-- Records 200 steps (2 seconds at 100 FPS physics)
+- Captures viewport at 1920×1080
+- Records 200 physics steps
 - Skips first 10 frames (warmup)
-- Encodes with ffmpeg (H.264, yuv420p)
-- Output: `recordings/sim_run.mp4`
+- Encodes with ffmpeg (yuv420p color space)
 
 **Camera Position**:
 ```python
-sim.set_camera_view(
-    eye=[0.0, -4.0, 4.0],    # Camera position
-    target=[0.0, 0.0, 3.0]   # Look at target
-)
-```
-
----
-
-## Data Flow Diagram
-
-```
-Image Upload
-     │
-     ├─► Validation (client + server)
-     │
-     ├─► Save to: uploads/YYYYMMDD-HHMMSS-{uuid}-{filename}
-     │
-     ├─► Create Job Entry (status: queued)
-     │
-     ├─► Background Task Start
-     │
-     └─► Return job_id to client
-              │
-              ├─► Client polls /job/{job_id} every 2s
-              │
-              └─► Job Status Updates:
-                       │
-                  "queued" → "processing" → "done"/"error"
-                       │
-                       └─► Processing Steps:
-                            │
-                            1. Gemini API Call
-                            │   ├─► Analyze image
-                            │   └─► Return properties JSON
-                            │
-                            2. ComfyUI Request
-                            │   ├─► POST to /process
-                            │   ├─► Queue workflow
-                            │   ├─► Generate 3D mesh
-                            │   └─► Return GLB file
-                            │
-                            3. Mesh Conversion
-                            │   ├─► GLB → USD
-                            │   ├─► Apply physics props
-                            │   └─► Save to /workspace/isaaclab/
-                            │
-                            4. Isaac Sim Trigger
-                                ├─► Spawn process
-                                ├─► Load scene
-                                ├─► Run simulation
-                                ├─► Record video
-                                └─► Save to recordings/
+eye = [0.0, -4.0, 4.0]
+target = [0.0, 0.0, 3.0]
 ```
 
 ---
@@ -377,111 +215,49 @@ scan2wall/
 ├── src/scan2wall/
 │   ├── image_collection/
 │   │   ├── app/
-│   │   │   ├── server.py         # FastAPI server
-│   │   │   └── templates/
-│   │   │       └── upload.html   # Mobile UI
-│   │   ├── ml_pipeline.py        # Main processing logic
-│   │   ├── run.py                # Server launcher (public IP)
-│   │   ├── run_desktop.py        # Desktop testing version
-│   │   ├── uploads/              # Uploaded images (gitignored)
-│   │   └── processed/            # Generated GLB files (gitignored)
+│   │   │   ├── server.py              # FastAPI server
+│   │   │   └── templates/upload.html  # Mobile UI
+│   │   ├── ml_pipeline.py             # Main processing logic
+│   │   ├── run.py                     # Server launcher
+│   │   └── uploads/                   # User images
 │   └── material_properties/
-│       └── get_object_properties.py  # Gemini API wrapper
+│       └── get_object_properties.py   # Gemini API wrapper
 │
 ├── 3d_gen/
-│   ├── ComfyUI/                  # ComfyUI installation
+│   ├── ComfyUI/                       # ComfyUI installation
 │   ├── workflows/
-│   │   └── image_to_3D_fast.json # Hunyuan 2.1 workflow
-│   ├── server.py                 # ComfyUI HTTP API
-│   ├── setup_comfyui.sh          # Unified uv-based setup script
-│   ├── modeldownload.sh          # Model downloader
-│   ├── .venv/                    # Python virtual environment (uv)
-│   └── input/                    # ComfyUI input dir (gitignored)
+│   │   └── image_to_3D_fast.json      # Hunyuan workflow
+│   ├── server.py                      # ComfyUI HTTP API
+│   └── setup_comfyui.sh               # Setup script
 │
 ├── isaac_scripts/
-│   ├── convert_mesh.py           # GLB → USD converter
-│   ├── test_place_obj.py         # Basic simulation test
-│   └── test_place_obj_video.py   # Simulation with video recording
+│   ├── convert_mesh.py                # GLB → USD converter
+│   └── test_place_obj_video.py        # Simulation + recording
 │
-├── recordings/                   # Simulation videos (gitignored)
-├── pyproject.toml                # Python dependencies
-├── uv.lock                       # Locked dependencies
-├── .env                          # Environment variables (gitignored)
-└── upload_page_qr.png            # Generated QR code (gitignored)
+└── recordings/                        # Output videos
 ```
 
 ---
 
-## API Specifications
+## Performance
 
-### POST /upload
+### Timing Breakdown
+| Stage | Time | Bottleneck |
+|-------|------|-----------|
+| Upload | 1-5s | Network |
+| Gemini API | 2-5s | API latency |
+| 3D Generation | 30-60s | **GPU compute** |
+| Mesh Conversion | 5-10s | CPU + I/O |
+| Simulation | 10-20s | GPU compute |
+| Video Encoding | 2-5s | CPU |
+| **Total** | **50-100s** | **3D generation** |
 
-**Request**:
-```
-Content-Type: multipart/form-data
-
-file: <binary image data>
-```
-
-**Response** (201 Created):
-```json
-{
-  "message": "✅ File uploaded successfully.",
-  "job_id": "a1b2c3d4e5f6...",
-  "filename": "20241012-143022-abc123-photo.jpg",
-  "status": "queued"
-}
-```
-
-**Errors**:
-- 400: Invalid file type or corrupted image
-- 500: Server error during save
-
-### GET /job/{job_id}
-
-**Response** (200 OK):
-```json
-{
-  "job_id": "a1b2c3d4e5f6...",
-  "status": "processing",
-  "filename": "20241012-143022-abc123-photo.jpg",
-  "created_at": 1697123456.789,
-  "processed_path": "/path/to/output.glb",
-  "error": null
-}
-```
-
-**Status Values**:
-- `queued`: Job created, not started
-- `processing`: Currently running ML pipeline
-- `done`: Successfully completed
-- `error`: Failed (check `error` field)
-
-**Errors**:
-- 404: Job ID not found
-
-### POST /process (ComfyUI Server)
-
-**Request**:
-```
-Content-Type: multipart/form-data
-
-file: <image file>
-timeout: 300
-job_id: "a1b2c3d4e5f6..."
-```
-
-**Response**:
-```
-Content-Type: model/gltf-binary
-
-<binary GLB data>
-```
-
-**Errors**:
-- 400: Invalid prompt JSON or missing node
-- 500: Failed to save upload
-- 504: Timeout waiting for ComfyUI output
+### Resource Usage
+| Component | VRAM | RAM | Storage |
+|-----------|------|-----|---------|
+| ComfyUI | 6-8GB | ~4GB | ~20GB (models) |
+| Isaac Sim | 4-6GB | ~8GB | ~10GB |
+| Upload Server | - | ~100MB | Negligible |
 
 ---
 
@@ -489,97 +265,34 @@ Content-Type: model/gltf-binary
 
 ### Environment Variables
 
-| Variable | Purpose | Default | Required |
-|----------|---------|---------|----------|
-| `GOOGLE_API_KEY` | Gemini API key | - | Yes |
-| `PORT` | Upload server port | 49100 | No |
-| `COMFY_SERVER_URL` | ComfyUI API URL | http://127.0.0.1:8012 | No |
-| `COMFY_INPUT_DIR` | ComfyUI input path | ~/scan2wall/3d_gen/input | No |
+#### Core Variables
 
-### Hardcoded Paths (to fix)
+| Variable | Purpose | Required | Default |
+|----------|---------|----------|---------|
+| `GOOGLE_API_KEY` | Gemini API authentication | Yes | - |
+| `ISAAC_INSTANCE_ADDRESS` | ComfyUI API endpoint | Yes | - |
+| `PORT` | Upload server port | No | 49100 |
+| `COMFY_SERVER_URL` | ComfyUI API URL | No | http://127.0.0.1:8012 |
+| `COMFY_INPUT_DIR` | ComfyUI input path | No | ~/scan2wall/3d_gen/input |
 
-⚠️ These should be moved to environment variables:
+#### Path Configuration (Advanced)
 
-1. **ml_pipeline.py:24** - ComfyUI server URL
-2. **ml_pipeline.py:61** - Isaac converter script path
-3. **ml_pipeline.py:98** - Isaac simulation script path
-4. **server.py:18** - ComfyUI output directory
-5. **server.py:22** - Workflow JSON path
+All paths are **auto-detected** from the project structure by default. Set these only for custom deployments:
 
----
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `PROJECT_ROOT` | Project root directory | Auto-detected |
+| `ISAAC_WORKSPACE` | Isaac Lab workspace | /workspace/isaaclab |
+| `ISAAC_SCRIPTS_DIR` | Isaac scripts location | ${PROJECT_ROOT}/isaac_scripts |
+| `ASSETS_CSV` | Assets tracking file | ${PROJECT_ROOT}/assets.csv |
+| `RECORDINGS_DIR` | Video output directory | ${PROJECT_ROOT}/recordings |
+| `USD_OUTPUT_DIR` | USD mesh output directory | ${ISAAC_WORKSPACE} |
 
-## Performance Characteristics
+**Single-instance setup**: Set `ISAAC_INSTANCE_ADDRESS=http://127.0.0.1:8012/process` and optionally customize `ISAAC_WORKSPACE`.
 
-### Timing Breakdown (approximate)
+**Path utilities**: Use `python -m scan2wall.utils.paths` to view current configuration and validate paths.
 
-| Stage | Time | Bottleneck |
-|-------|------|-----------|
-| Upload | 1-5s | Network bandwidth |
-| Gemini API | 2-5s | API latency |
-| 3D Generation | 30-60s | GPU compute (Hunyuan 2.1) |
-| Mesh Conversion | 5-10s | CPU + I/O |
-| Simulation | 10-20s | GPU compute (Isaac Sim) |
-| Video Encoding | 2-5s | CPU (ffmpeg) |
-| **Total** | **50-100s** | **3D generation** |
-
-### Resource Usage
-
-| Component | CPU | RAM | VRAM | Storage |
-|-----------|-----|-----|------|---------|
-| Upload Server | Low | ~100MB | - | Negligible |
-| ComfyUI | Medium | ~4GB | 6-8GB | ~20GB (models) |
-| Isaac Sim | High | ~8GB | 4-6GB | ~10GB |
-| Gemini API | - | - | - | - |
-
----
-
-## Scalability Considerations
-
-### Current Limitations
-
-1. **Single-threaded processing**: Jobs processed sequentially
-2. **In-memory job storage**: Lost on server restart
-3. **No job queue**: No prioritization or retry logic
-4. **Synchronous ComfyUI**: One generation at a time
-5. **No cleanup**: Uploaded files accumulate indefinitely
-
-### Potential Improvements
-
-1. **Job Queue System**: Redis + Celery for distributed processing
-2. **Persistent Storage**: Database for job metadata
-3. **Multi-GPU Support**: Parallel ComfyUI instances
-4. **Cloud Storage**: S3/GCS for uploads and outputs
-5. **Cleanup Jobs**: Automatic deletion of old files
-6. **Webhooks**: Notify client on completion (vs polling)
-7. **Caching**: Cache frequently-generated meshes
-
----
-
-## Security Considerations
-
-### Current Protections
-
-✅ File signature validation (prevents fake extensions)
-✅ Pillow verification (prevents malformed images)
-✅ Allowed file types whitelist
-✅ Filename sanitization
-
-### Potential Risks
-
-⚠️ No rate limiting (DDoS vulnerability)
-⚠️ No authentication (public access)
-⚠️ No file size limits on server side
-⚠️ API keys in environment (consider secret management)
-⚠️ No HTTPS (transmits images unencrypted)
-
-### Recommendations
-
-1. Add rate limiting (e.g., slowapi)
-2. Implement authentication (API keys or OAuth)
-3. Add file size limits (FastAPI `File(max_size=...)`)
-4. Use secret management (AWS Secrets Manager, Vault)
-5. Deploy with HTTPS (Let's Encrypt)
-6. Add CORS restrictions
+See `.env.example` for full configuration template.
 
 ---
 
@@ -587,77 +300,40 @@ Content-Type: model/gltf-binary
 
 ### Frontend
 - File type validation before upload
-- Network error catching and display
-- Timeout handling (stops polling after 5 minutes)
+- Network error catching with user feedback
+- Polling timeout after 5 minutes
 
 ### Backend
-- Comprehensive exception catching in pipeline
+- Exception catching in ML pipeline
 - Job status updates on failure
 - Detailed error messages in job metadata
 
-### Missing
-- Retry logic for transient failures
-- Dead letter queue for failed jobs
-- Alerting/monitoring system
-
 ---
 
-## Testing Strategy
+## Scalability Considerations
 
-### Unit Tests (not yet implemented)
+### Current Limitations
+- Sequential job processing (one at a time)
+- In-memory job storage (lost on restart)
+- No job queue or prioritization
+- Single ComfyUI instance
+- No automatic file cleanup
 
-Suggested test coverage:
-- Image validation functions
-- Material property parsing
-- Mesh conversion parameters
-- Job status transitions
-
-### Integration Tests
-
-Manual testing checklist:
-- [ ] Upload valid image → success
-- [ ] Upload non-image → rejection
-- [ ] Upload oversized file → warning
-- [ ] Check job status → correct state
-- [ ] Complete pipeline → video generated
-- [ ] ComfyUI timeout → error state
-- [ ] Network failure → error message
-
----
-
-## Future Architecture
-
-### Email Integration (see EMAIL_INTEGRATION.md)
-
-```
-Email Server → Parse Image → Upload API → Existing Pipeline
-                    │
-                    └─► Reply with video link
-```
-
-### Multi-User Support
-
-```
-User Auth → Personal Job Queue → Isolated File Storage
-                    │
-                    └─► Job History Dashboard
-```
-
-### Real-Time Updates
-
-```
-WebSocket Connection → Live Status Updates → Progress Bar
-                            │
-                            └─► Stream Logs
-```
+### Potential Improvements
+- Job queue system (Redis + Celery)
+- Database for persistent job storage
+- Multi-GPU parallel processing
+- Cloud storage (S3/GCS)
+- WebSocket for real-time updates
+- Automatic cleanup of old files
 
 ---
 
 ## Related Documentation
 
-- **SETUP.md** - Installation and configuration guide
-- **EMAIL_INTEGRATION.md** - Email feature design
-- **README.md** - Quick start guide
-- **Isaac Sim Docs**: https://docs.omniverse.nvidia.com/isaacsim/
-- **ComfyUI**: https://github.com/comfyanonymous/ComfyUI
-- **Hunyuan 2.1**: https://github.com/Tencent/Hunyuan3D-2
+- **[README.md](README.md)** - Quick start guide
+- **[SETUP.md](SETUP.md)** - Installation instructions
+- **[EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md)** - Email feature design
+- **[ComfyUI Docs](https://github.com/comfyanonymous/ComfyUI)**
+- **[Hunyuan 3D 2.1](https://github.com/Tencent/Hunyuan3D-2)**
+- **[Isaac Sim Docs](https://docs.omniverse.nvidia.com/isaacsim/)**
