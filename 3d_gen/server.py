@@ -77,7 +77,7 @@ async def process_image(
     shutil.copy2(saved_path, comfy_input / img_name)
     prompt[LOAD_IMAGE_NODE_ID]["inputs"]["image"] = str(comfy_input / img_name)
     unique_prefix = job_id or f"job_{uuid.uuid4().hex}"
-    prompt["89"]["inputs"]["string"] = unique_prefix
+    prompt[SAVE_MODEL_NODE_ID]["inputs"]["string"] = unique_prefix
     queue_prompt(prompt)
     # unique_prefix = "747dfbc5c0434263ab0af03ba185cc31"
     # # unique_prefix = "job_2fea13a4fc344f2cbe70e427c9c4c8f2"
