@@ -265,6 +265,12 @@ Spawns detached Isaac Sim process:
 - Node 112: Load Image
 - Node 89: Save Model (GLB output)
 
+**Custom Nodes Available**:
+- ComfyUI_LayerStyle: Photoshop-like layer effects (drop shadows, gradients, etc.)
+- ComfyUI_LightGradient: Advanced gradient generation
+- ComfyUI-KJNodes: Various utility nodes
+- ComfyUI_Comfyroll_CustomNodes: Additional workflow nodes
+
 ### 5. Isaac Sim Integration
 
 **Location**: `isaac_scripts/test_place_obj_video.py`
@@ -387,8 +393,9 @@ scan2wall/
 │   ├── workflows/
 │   │   └── image_to_3D_fast.json # Hunyuan 2.1 workflow
 │   ├── server.py                 # ComfyUI HTTP API
-│   ├── comfy.sh                  # ComfyUI installer
+│   ├── setup_comfyui.sh          # Unified uv-based setup script
 │   ├── modeldownload.sh          # Model downloader
+│   ├── .venv/                    # Python virtual environment (uv)
 │   └── input/                    # ComfyUI input dir (gitignored)
 │
 ├── isaac_scripts/

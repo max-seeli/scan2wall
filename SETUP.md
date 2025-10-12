@@ -25,12 +25,11 @@ Complete installation and setup instructions for the scan2wall project - a tool 
 - **Storage**: ~50GB free space (models + dependencies)
 
 ### Software Requirements
-- Python 3.10 or 3.11
+- Python 3.10 or 3.11 (uv will auto-install if needed)
 - CUDA Toolkit (11.8 or 12.x)
 - [NVIDIA Isaac Sim](https://developer.nvidia.com/isaac-sim) (2023.1.1 or later)
-- Conda or Miniconda
 - ffmpeg (for video encoding)
-- uv (Python package manager)
+- uv (Python package manager) - auto-installs if missing
 
 ---
 
@@ -57,50 +56,47 @@ uv pip install -e .
 
 The 3D mesh generation uses ComfyUI with the Hunyuan 2.1 model.
 
-#### Step 1: Create Conda Environment
+#### Single-Command Setup
 
 ```bash
 cd 3d_gen
 
-# Option A: Use the provided script
-chmod +x minic.sh
-./minic.sh
-
-# Option B: Manual setup
-conda create -n comfyui python=3.10 -y
+# Run the unified setup script (uses uv, no conda needed)
+bash setup_comfyui.sh
 ```
 
-**IMPORTANT**: Close and reopen your terminal after creating the environment.
-
-#### Step 2: Install ComfyUI
-
-```bash
-# Activate the environment
-conda activate comfyui
-
-# Run the ComfyUI installation script
-chmod +x comfy.sh
-bash comfy.sh
-```
-
-This script will:
+This script will automatically:
+- Create a Python 3.10 virtual environment with uv
 - Clone ComfyUI repository
 - Install PyTorch with CUDA support
-- Install all required dependencies
+- Install all custom nodes and dependencies (including LayerStyle and LightGradient)
+- Build CUDA extensions for Hunyuan 3D
+- Copy custom node configurations
 
-#### Step 3: Download Models
+**Time**: ~10-15 minutes depending on your internet speed.
+
+#### Download Models
+
+After setup completes:
 
 ```bash
-# Still in 3d_gen directory with comfyui environment active
-chmod +x modeldownload.sh
+# Still in 3d_gen directory
 bash modeldownload.sh
 ```
 
-This downloads the Hunyuan 2.1 model weights (~8GB). The script will place them in the correct ComfyUI directories.
+This downloads the Hunyuan 2.1 model weights (~8GB total):
+- DIT model (diffusion transformer)
+- VAE model (variational autoencoder)
 
-#### Step 4: Test ComfyUI
+**Time**: ~5-10 minutes depending on your internet speed.
+
+#### Test ComfyUI
 
 ```bash
+# Activate the environment
+source .venv/bin/activate
+
+# Start ComfyUI
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
@@ -194,7 +190,7 @@ The application has three main components that need to run simultaneously:
 
 ```bash
 cd 3d_gen
-conda activate comfyui
+source .venv/bin/activate
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
@@ -203,7 +199,7 @@ python main.py --listen 0.0.0.0 --port 8188
 
 ```bash
 cd 3d_gen
-conda activate comfyui
+source .venv/bin/activate
 python server.py
 ```
 

@@ -58,11 +58,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 uv pip install -e .
 
-# 4. Set up ComfyUI (in separate terminal)
+# 4. Set up ComfyUI (single script, no conda needed)
 cd 3d_gen
-conda create -n comfyui python=3.10 -y
-conda activate comfyui
-bash comfy.sh
+bash setup_comfyui.sh
 bash modeldownload.sh
 ```
 
@@ -73,7 +71,7 @@ See [SETUP.md](SETUP.md) for detailed instructions.
 **Terminal 1** - ComfyUI:
 ```bash
 cd 3d_gen
-conda activate comfyui
+source .venv/bin/activate
 cd ComfyUI
 python main.py --listen 0.0.0.0 --port 8188
 ```
@@ -81,7 +79,7 @@ python main.py --listen 0.0.0.0 --port 8188
 **Terminal 2** - ComfyUI API Server:
 ```bash
 cd 3d_gen
-conda activate comfyui
+source .venv/bin/activate
 python server.py
 ```
 
