@@ -19,7 +19,9 @@ COMFY_OUTPUT_DIR = Path("~/scan2wall/3d_gen/ComfyUI/output").expanduser()
 COMFY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR = Path("/tmp/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PROMPT_FILE = Path("~/scan2wall/3d_gen/workflows/api_prompt.json").expanduser()
+PROMPT_FILE = Path("~/scan2wall/3d_gen/workflows/api_prompt_fast.json").expanduser()
+LOAD_IMAGE_NODE_ID = "112"
+SAVE_MODEL_NODE_ID = "89"
 
 def queue_prompt(prompt: dict, prompt_url: str = PROMPT_URL) -> None:
     """Queue the provided prompt for ComfyUI processing."""
@@ -49,19 +51,19 @@ def wait_for_file(path: Path, timeout: float = 300.0, stable_time: float = 1.0) 
 async def process_image(
     file: UploadFile = File(...),
     timeout: float = Form(300.0),
+    job_id: str = Form(None),
 ) -> FileResponse:
     """Upload an image, queue the prompt, and return the generated output."""
-    print(f"Received file: {file.filename}, timeout: {timeout}")
+    print(f"Received file: {file.filename}, timeout: {timeout}, job_id: {job_id}")
     try:
         prompt = json.loads(PROMPT_FILE.read_text())
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid prompt JSON: {exc}") from exc
 
-    if "69" not in prompt or "inputs" not in prompt["69"]:
-        print(prompt)
+    if LOAD_IMAGE_NODE_ID not in prompt or "inputs" not in prompt[LOAD_IMAGE_NODE_ID]:
         raise HTTPException(
             status_code=400,
-            detail="Prompt must contain node '69' with an 'inputs' field.",
+            detail=f"Prompt must contain node '{LOAD_IMAGE_NODE_ID}' with an 'inputs' field.",
         )
 
     try:
@@ -73,10 +75,12 @@ async def process_image(
     comfy_input.mkdir(parents=True, exist_ok=True)
     img_name = Path(saved_path).name
     shutil.copy2(saved_path, comfy_input / img_name)
-    prompt["69"]["inputs"]["image"] = str(comfy_input / img_name)
-    unique_prefix = f"job_{uuid.uuid4().hex}"
+    prompt[LOAD_IMAGE_NODE_ID]["inputs"]["image"] = str(comfy_input / img_name)
+    unique_prefix = job_id or f"job_{uuid.uuid4().hex}"
     prompt["89"]["inputs"]["string"] = unique_prefix
     queue_prompt(prompt)
+    # unique_prefix = "747dfbc5c0434263ab0af03ba185cc31"
+    # # unique_prefix = "job_2fea13a4fc344f2cbe70e427c9c4c8f2"
     pattern = COMFY_OUTPUT_DIR / f"{unique_prefix}*.glb"
     deadline = time.time() + float(timeout)
     found = None
@@ -87,10 +91,12 @@ async def process_image(
             if found.stat().st_size > 0:
                 break
         time.sleep(0.5)
+    
     if not found:
         raise HTTPException(status_code=504, detail="Timed out waiting for ComfyUI output")
-
-    return FileResponse(path=found, media_type="model/gltf-binary", filename=found.name)
+    found = COMFY_OUTPUT_DIR / f"{unique_prefix}.glb"
+    print(found)
+    return FileResponse(path=str(found), media_type="model/gltf-binary", filename=f"{unique_prefix}.glb")
 
 @app.get("/health")
 def health() -> JSONResponse:
