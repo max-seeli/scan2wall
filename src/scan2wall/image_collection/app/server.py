@@ -38,7 +38,7 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
     
     # --- Step 2: signature check ---
     kind = imghdr.what(None, contents[:512])
-    if kind not in {"jpeg", "png", "webp", "gif"}:
+    if kind not in {"jpeg", "png", "webp", "gif", "jpg"}:
         raise HTTPException(
             status_code=400,
             detail=f"🚫 '{file.filename}' is not a valid image. Supported: JPEG, PNG, WEBP, GIF."
