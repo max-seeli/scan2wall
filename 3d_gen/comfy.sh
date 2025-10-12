@@ -42,10 +42,12 @@ cd $HOME/$BPATH/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/Differentia
 python -m setup install
 
 cp -r $HOME/$BPATH/andrea-nodes $HOME/$BPATH/ComfyUI/custom_nodes/andrea-nodes
+# cp -r $HOME/scan2wall/3d_gen/andrea-nodes $HOME/scan2wall/3d_gen/ComfyUI/custom_nodes/andrea-nodes
+
 cp $HOME/$BPATH/optnodes/hunyan_opt_nodes.py $HOME/$BPATH/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/nodes.py
 cp $HOME/$BPATH/optnodes/textureGenPipeline.py $HOME/$BPATH/ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/textureGenPipeline.py
 cp $HOME/$BPATH/optnodes/Inspyrenet_Rembg.py $HOME/$BPATH/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/Inspyrenet_Rembg.py
-s
+
 pip install transformers==4.46.3
 pip install pynanoinstantmeshes
 

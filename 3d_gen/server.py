@@ -19,7 +19,7 @@ COMFY_OUTPUT_DIR = Path("~/scan2wall/3d_gen/ComfyUI/output").expanduser()
 COMFY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR = Path("/tmp/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PROMPT_FILE = Path("~/scan2wall/3d_gen/workflows/api_prompt_fast.json").expanduser()
+PROMPT_FILE = Path("~/scan2wall/3d_gen/workflows/api_prompt_strcnst.json").expanduser()
 LOAD_IMAGE_NODE_ID = "112"
 SAVE_MODEL_NODE_ID = "89"
 
