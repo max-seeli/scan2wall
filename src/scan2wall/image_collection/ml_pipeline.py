@@ -17,8 +17,7 @@ def get_3d_model(image_path, job_id, is_demo=False):
             url,
             files={"file": (image_path.name, f, "application/octet-stream")},
             data={"timeout": "300", "job_id": job_id},
-            timeout=(10, 600),
-            is_demo=is_demo
+            timeout=(10, 600)
         )
     resp.raise_for_status()
     return resp
