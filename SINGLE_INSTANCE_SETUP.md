@@ -51,11 +51,24 @@ docker compose up -d
 - `web-viewer` - Kit App Streaming viewer (/viewer endpoint)
 - `nginx` - Reverse proxy
 
+This will take a while
+
 ### Phase 3: ComfyUI Setup
+Now go back to scan2wall and install the repo itself
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync && uv pip install -e .
+```
+
+# Setup ComfyUI and download models
+cd 3d_gen
+
 ```bash
 cd ~/scan2wall/3d_gen
 
-# Download Hunyuan 3D models (~8GB)
+# Set up comfyui and download hunyan3D models
+bash setup_comfyui.sh
 bash modeldownload.sh
 ```
 
@@ -64,17 +77,15 @@ bash modeldownload.sh
 - `models/vae/Hunyuan3D-vae-v2-1-fp16.ckpt`
 
 ### Phase 4: Configuration
+
 ```bash
 cd ~/scan2wall
-
-# Update .env for single-instance
-# Key changes:
-# - ISAAC_INSTANCE_ADDRESS=http://127.0.0.1:8012/process
-# - ISAAC_WORKSPACE=/home/shadeform/isaac_workspace
-# - USD_OUTPUT_DIR=/home/shadeform/isaac_workspace
+cp .env.example .env
 ```
+Add your Gemini API key to the .env
 
 ### Phase 5: Supporting Tools
+
 ```bash
 # Install ffmpeg for video encoding
 sudo apt-get update && sudo apt-get install -y ffmpeg
