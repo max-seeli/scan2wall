@@ -67,7 +67,7 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
 def _run_pipeline(job_id: str, path: str) -> None:
     JOBS[job_id]["status"] = "processing"
     try:
-        out_path = process_image(path)
+        out_path = process_image(job_id, path)
         JOBS[job_id]["status"] = "done"
         JOBS[job_id]["processed_path"] = out_path
     except Exception as e:

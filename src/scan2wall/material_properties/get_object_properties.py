@@ -25,6 +25,7 @@ Return ONLY valid JSON in this exact schema:
     "width": {"value": float},
     "height": {"value": float}
   },
+  "weight_kg": {"value": float},
   "friction_coefficients": {
     "static": float,
     "dynamic": float
@@ -39,14 +40,7 @@ Guidelines:
 - Return only the JSON, no prose.
 """
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "image_path", type=str, help="Path to the input image file"
-    )
-    args = parser.parse_args()
-    # Load your image
-    image_path = args.image_path
+def get_object_properties(image_path):
     img = Image.open(image_path)
 
     # Call the model
@@ -65,4 +59,4 @@ if __name__ == "__main__":
     except json.JSONDecodeError:
         result = {"error": "Invalid JSON returned", "raw": response.text}
 
-    print(json.dumps(result, indent=2))
+    return result

@@ -24,7 +24,7 @@ def _public_ip():
 
 def main():
     host = "0.0.0.0"
-    port = int(os.environ.get("PORT", "8000"))
+    port = int(os.environ.get("PORT", "49100"))
     url = f"http://{_public_ip()}:{port}/"
     print(f"\nOpen on your phone: {url}\n")
 
