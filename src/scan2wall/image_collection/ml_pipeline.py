@@ -35,7 +35,7 @@ def process_image(job_id: str, image_path: str) -> str:
     resp.raise_for_status()
     out_file = out_dir / f"{job_id}.glb"
     out_file.write_bytes(resp.content)
-    # out_file="/workspace/scan2wall/src/scan2wall/image_collection/processed/0aa550e85bfc4dafa529a749efe0da36.glb"
+    # out_file="/workspace/scan2wall/src/scan2wall/image_collection/processed/de7e4471f106435f83ee961196855540.glb"
     # print(out_file)
 
     mass = 1.0
@@ -44,6 +44,7 @@ def process_image(job_id: str, image_path: str) -> str:
     scaling = 1.0
     if USE_LLM:
         props = get_object_properties(image_path)
+        obj_type = props['object_type']
         print(props)
         mass = props["weight_kg"]["value"]
         df = props["friction_coefficients"]["dynamic"]
@@ -66,10 +67,10 @@ def process_image(job_id: str, image_path: str) -> str:
         with open(
             "/workspace/scan2wall/assets.csv", "a"
         ) as f:
-            f.write(f"{props['object_type']},{scaling},{mass},{usd_file}\n")
+            f.write(f"{obj_type},{scaling},{mass},{usd_file}\n")
     print("debug 3")
 
-    make_throwing_anim(usd_file, scaling)
+    make_throwing_anim(usd_file, scaling, file_name=str(obj_type))
     return str(out_file)
 
 
@@ -105,18 +106,35 @@ def convert_mesh(out_file, fname, mass=None, df=None, ds=None):
     #    --collision-approximation convexHull   --mass 0.35   --com 0 0 0   --inertia 0.00195 0.00195 0.000246   --principal-axes 1 0 0 0   --static-friction 0.6   --dynamic-friction 0.5   --restitution 0.2   --friction-combine average   --restitution-combine min")
 
 
-def make_throwing_anim(file, scaling=1.0):
+def make_throwing_anim(file, scaling=1.0, file_name="sim_run"):
     print("Creating throwing anim")
+    counter_file = Path("/workspace/scan2wall/video_counter.txt")
+    counter_file.parent.mkdir(parents=True, exist_ok=True)
+    if counter_file.exists():
+        with open(counter_file, "r") as f:
+            n = int(f.read().strip() or 0)
+    else:
+        n = 0
+    n += 1
+    with open(counter_file, "w") as f:
+        f.write(str(n))
+
+    video_name = f"{n:04d}_{file_name}"
+    print(video_name)
     cmd = (
         f"python /workspace/scan2wall/isaac_scripts/test_place_obj_video.py "
-        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window'"
+        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window' --video_name '{video_name}.mp4'"
     )
-    subprocess.Popen(
+    proc = subprocess.Popen(
         ["/bin/bash", "-lic", cmd],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,  # fully detached from parent
     )
+    # for line in proc.stdout:
+    #     print(line, end="")  # stream live output
+
+    proc.wait()
     print("DONE! :)")
 
 
