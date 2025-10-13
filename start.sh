@@ -33,7 +33,7 @@ fi
 # Check if setup was done
 if [ ! -d "3d_gen/ComfyUI" ]; then
     echo -e "${YELLOW}⚠  ComfyUI not found. Please run setup first:${NC}"
-    echo "   cd 3d_gen && bash setup_comfyui.sh"
+    echo "   cd 3d_gen && bash setup_comfyui.sh && bash modeldownload.sh???"
     exit 1
 fi
 
@@ -78,7 +78,7 @@ if [ "$MODE" = "auto" ] || [ "$MODE" = "tmux" ]; then
         tmux new-session -d -s $SESSION -n "comfyui" "cd $SCRIPT_DIR/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188"
 
         # Create new window for upload server
-        tmux new-window -t $SESSION -n "upload" "cd $SCRIPT_DIR && uv run 3d_gen/image_collection/run.py"
+        tmux new-window -t $SESSION -n "upload" "cd $SCRIPT_DIR && python 3d_gen/image_collection/run.py"
 
         # Create status window
         tmux new-window -t $SESSION -n "status" "cd $SCRIPT_DIR && bash -c 'echo \"scan2wall Services\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:49100\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; tail -f /dev/null'"
@@ -109,7 +109,7 @@ if [ "$MODE" = "manual" ]; then
     echo ""
     echo -e "${GREEN}Terminal 2 - Upload Server:${NC}"
     echo "  cd $(pwd)"
-    echo "  uv run 3d_gen/image_collection/run.py"
+    echo "  python 3d_gen/image_collection/run.py"
     echo ""
     echo -e "${GREEN}Terminal 3 - Isaac Lab (ready for scripts):${NC}"
     echo "  cd /workspace/isaac"
@@ -138,7 +138,7 @@ if [ "$MODE" = "background" ]; then
 
     # Start upload server
     cd "$SCRIPT_DIR"
-    nohup uv run 3d_gen/image_collection/run.py > "$SCRIPT_DIR/logs/upload.log" 2>&1 &
+    nohup python 3d_gen/image_collection/run.py > "$SCRIPT_DIR/logs/upload.log" 2>&1 &
     UPLOAD_PID=$!
     echo -e "${GREEN}✓${NC} Upload server started (PID: $UPLOAD_PID)"
 

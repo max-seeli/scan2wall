@@ -9,7 +9,10 @@ Searches assets.csv for a specific object and triggers the simulation.
 
 from pathlib import Path
 import subprocess
-from scan2wall.utils.paths import get_isaac_scripts_dir, get_assets_csv
+import sys
+# Add current directory to path to import from 3d_gen
+sys.path.insert(0, str(Path(__file__).parent))
+from utils.paths import get_isaac_scripts_dir, get_assets_csv
 
 
 def make_throwing_anim(file: str, scaling: float = 1.0):

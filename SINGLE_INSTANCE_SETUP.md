@@ -83,14 +83,14 @@ mkdir -p ~/scan2wall/3d_gen/input
     │   ├── ComfyUI/            # 3D generation backend
     │   │   └── models/         # Hunyuan 3D models (~8GB)
     │   ├── input/              # Image upload directory
-    │   └── server.py           # ComfyUI API wrapper (port 8012)
+    │   ├── image_collection/
+    │   │   └── run.py          # Upload server (port 49100)
+    │   ├── material_properties/ # Gemini integration
+    │   └── utils/              # Path configuration
     ├── isaac_scripts/
     │   ├── convert_mesh.py     # GLB → USD converter
     │   └── test_place_obj_video.py  # Simulation script
-    ├── recordings/             # Output videos
-    └── src/scan2wall/
-        └── image_collection/
-            └── run.py          # Upload server (port 49100)
+    └── recordings/             # Output videos
 ```
 
 ---
@@ -117,7 +117,7 @@ python server.py  # Runs on port 8012
 ### Terminal 3: Upload Server
 ```bash
 cd ~/scan2wall
-uv run src/scan2wall/image_collection/run.py  # Runs on port 49100
+python 3d_gen/image_collection/run.py  # Runs on port 49100
 ```
 
 ---

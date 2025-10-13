@@ -246,7 +246,7 @@ python server.py
 
 ```bash
 cd scan2wall
-uv run src/scan2wall/image_collection/run.py
+python 3d_gen/image_collection/run.py
 ```
 
 **What it does**: Main upload server that coordinates the entire pipeline (runs on port 49100)
@@ -263,7 +263,7 @@ The server will:
 
 **For testing without phone**:
 ```bash
-uv run src/scan2wall/image_collection/run_desktop.py
+python 3d_gen/image_collection/run_desktop.py
 ```
 
 ---
@@ -377,7 +377,7 @@ lsof -ti:49100 | xargs kill -9
 **Solution**:
 1. Check path configuration:
    ```bash
-   python -m scan2wall.utils.paths
+   python 3d_gen/utils/paths.py
    ```
 2. Verify all paths exist and are correct
 3. If using custom paths, ensure they're set in `.env`:
@@ -415,14 +415,14 @@ Visit `http://localhost:49100/jobs` to see all jobs and their current status.
 
 Use the desktop version for local testing:
 ```bash
-uv run src/scan2wall/image_collection/run_desktop.py
+python 3d_gen/image_collection/run_desktop.py
 ```
 
 ### Debug ML Pipeline
 
 Test pipeline components individually:
 ```bash
-cd src/scan2wall/image_collection
+cd 3d_gen/image_collection
 python ml_pipeline.py
 ```
 

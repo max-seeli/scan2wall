@@ -34,7 +34,7 @@ python main.py --listen 0.0.0.0 --port 8188
 
 **Terminal 2 - Upload Server:**
 ```bash
-uv run 3d_gen/image_collection/run.py  # Runs on port 49100
+python 3d_gen/image_collection/run.py  # Runs on port 49100
 ```
 
 **Terminal 3 - Isaac Lab (for running scripts):**
@@ -47,7 +47,7 @@ cd /workspace/isaac
 
 **Test without phone (desktop upload):**
 ```bash
-uv run 3d_gen/image_collection/run_desktop.py
+python 3d_gen/image_collection/run_desktop.py
 ```
 
 **Test material property inference:**
@@ -58,8 +58,6 @@ python get_object_properties.py <image_path>
 
 **View path configuration:**
 ```bash
-python -m scan2wall.utils.paths
-# Or directly:
 python 3d_gen/utils/paths.py
 ```
 
@@ -236,7 +234,20 @@ See `.env.example` for complete configuration template.
 
 **CUDA out of memory:** Close other GPU applications, restart ComfyUI
 
-**Path errors:** Run `python -m scan2wall.utils.paths` to debug configuration
+**Path errors:** Run `python 3d_gen/utils/paths.py` to debug configuration
+
+**Import errors (ModuleNotFoundError):**
+The codebase uses direct imports within the `3d_gen/` directory. Imports are handled via `sys.path.insert()` in:
+- `3d_gen/image_collection/ml_pipeline.py`
+- `3d_gen/standalone_video.py`
+
+No package installation required - imports resolve at runtime.
+
+**Missing dependencies for upload server:**
+If you get `ModuleNotFoundError` for qrcode, fastapi, etc., install:
+```bash
+pip install fastapi uvicorn python-multipart python-dotenv pillow requests google-generativeai qrcode
+```
 
 **Can't connect from phone:** Ensure same WiFi network, check firewall allows port 49100
 
@@ -257,7 +268,7 @@ See `.env.example` for complete configuration template.
 
 ## Project Structure Note
 
-The actual source code is in `3d_gen/` not `src/scan2wall/`. The `scan2wall` Python package appears to be imported from `3d_gen/` subdirectories. Key files:
+The source code is in `3d_gen/`. Imports now use direct relative imports within the `3d_gen/` directory structure (the `scan2wall` package import dependency has been removed). Key files:
 - `3d_gen/image_collection/` - Upload server and web UI
 - `3d_gen/material_properties/` - Gemini integration
 - `3d_gen/utils/` - Path configuration utilities

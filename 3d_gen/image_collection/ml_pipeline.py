@@ -1,8 +1,12 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from scan2wall.material_properties.get_object_properties import get_object_properties
-from scan2wall.utils.paths import (
+import sys
+from pathlib import Path as PathLib
+# Add parent directory to path to import from 3d_gen
+sys.path.insert(0, str(PathLib(__file__).parent.parent))
+from material_properties.get_object_properties import get_object_properties
+from utils.paths import (
     get_isaac_scripts_dir,
     get_assets_csv,
     get_usd_output_dir,

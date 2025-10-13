@@ -39,11 +39,8 @@ A hackathon project for NVIDIA's Simulation Hack that combines phone camera capt
 git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
 
-# Install uv package manager
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install main dependencies
-uv sync && uv pip install -e .
+# Install Python dependencies for upload server
+pip install fastapi uvicorn python-multipart python-dotenv pillow requests google-generativeai qrcode
 
 # Setup ComfyUI and download models (~8GB, takes ~15 min)
 cd 3d_gen
@@ -52,7 +49,7 @@ bash modeldownload.sh
 cd ..
 
 # Setup Isaac Lab (~10GB, takes ~20 min)
-bash setup_isaac.sh
+# Follow instructions at: https://github.com/isaac-sim/IsaacLab
 ```
 
 ### Configuration
@@ -71,13 +68,15 @@ Edit `.env` and add your Gemini API key:
 ```bash
 ./start.sh auto
 ```
-This opens 3 split terminals automatically. Use `Ctrl+B` then number keys to switch between them.
+This opens tmux windows automatically. Use `Ctrl+B` then number keys to switch between them.
 
-**Option 2: Manual (3 separate terminals)**
+**Option 2: Manual (2 separate terminals)**
 ```bash
 ./start.sh
 ```
-This prints commands to run in 3 separate terminal windows.
+This prints commands to run in 2 separate terminal windows:
+- Terminal 1: ComfyUI backend
+- Terminal 2: Upload server
 
 Once started, scan the QR code or visit the URL on your phone to upload photos!
 
@@ -100,10 +99,11 @@ Once started, scan the QR code or visit the URL on your phone to upload photos!
 
 ```
 scan2wall/
-├── src/scan2wall/
+├── 3d_gen/
 │   ├── image_collection/    # Upload server and web UI
-│   └── material_properties/  # Gemini API integration
-├── 3d_gen/                  # ComfyUI and 3D generation
+│   ├── material_properties/ # Gemini API integration
+│   ├── utils/               # Path configuration
+│   └── ComfyUI/             # 3D generation backend
 ├── isaac_scripts/           # Isaac Sim simulation scripts
 └── recordings/              # Generated videos
 ```
