@@ -42,7 +42,7 @@ def get_isaac_workspace() -> Path:
     """
     Get Isaac Lab workspace directory (where USD files are saved).
 
-    Uses ISAAC_WORKSPACE env var if set, otherwise defaults to /workspace/isaaclab
+    Uses ISAAC_WORKSPACE env var if set, otherwise defaults to /workspace/IsaacLab
 
     Returns:
         Path to Isaac workspace
@@ -50,7 +50,7 @@ def get_isaac_workspace() -> Path:
     env_workspace = os.getenv("ISAAC_WORKSPACE")
     if env_workspace:
         return Path(env_workspace).resolve()
-    return Path("/workspace/isaaclab")
+    return Path("/workspace/IsaacLab")
 
 
 def get_isaac_scripts_dir() -> Path:
