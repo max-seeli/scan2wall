@@ -11,6 +11,10 @@ import requests
 import re
 import subprocess
 import os
+import json
+import time
+import shutil
+import uuid
 
 USE_LLM = True
 USE_SCALING = True
@@ -36,24 +40,12 @@ def process_image(job_id: str, image_path: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate 3D mesh via ComfyUI API
-    ISAAC_INSTANCE_ADDRESS = os.getenv("ISAAC_INSTANCE_ADDRESS")
+    print("=" * 60)
+    print("Starting 3D mesh generation via ComfyUI...")
+    print("=" * 60)
 
-    if ISAAC_INSTANCE_ADDRESS is None:
-        raise ValueError("ISAAC_INSTANCE_ADDRESS environment variable not set!")
-
-    url = ISAAC_INSTANCE_ADDRESS
-    with open(p, "rb") as f:
-        resp = requests.post(
-            url,
-            files={"file": (p.name, f, "application/octet-stream")},
-            data={"timeout": "300", "job_id": job_id},
-            timeout=(10, 600),
-        )
-    print("3D mesh generation request done.")
-    resp.raise_for_status()
-
-    out_file = out_dir / f"{job_id}.glb"
-    out_file.write_bytes(resp.content)
+    glb_path = generate_mesh_via_comfyui(image_path, job_id)
+    print(f"✓ 3D mesh generated: {glb_path}")
 
     # Initialize material properties with defaults
     mass = 1.0
@@ -63,8 +55,9 @@ def process_image(job_id: str, image_path: str) -> str:
 
     # Infer material properties using Gemini if enabled
     if USE_LLM:
+        print("\nInferring material properties with Gemini...")
         props = get_object_properties(image_path)
-        print(f"Material properties inferred: {props}")
+        print(f"✓ Material properties: {props}")
         mass = props["weight_kg"]["value"]
         df = props["friction_coefficients"]["dynamic"]
         ds = props["friction_coefficients"]["static"]
@@ -78,8 +71,9 @@ def process_image(job_id: str, image_path: str) -> str:
         scaling = 1.0
 
     # Convert GLB mesh to USD with physics properties
-    usd_file = convert_mesh(out_file, f"{job_id}.glb", mass=mass, df=df, ds=ds)
-    print(f"Mesh converted to USD: {usd_file}")
+    print("\nConverting mesh to USD format...")
+    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds)
+    print(f"✓ Mesh converted to USD: {usd_file}")
 
     # Log properties to CSV
     if USE_LLM:
@@ -94,9 +88,137 @@ def process_image(job_id: str, image_path: str) -> str:
             f.write(f"{props['object_type']},{scaling},{mass},{usd_file}\n")
 
     # Trigger Isaac Sim simulation
+    print("\nTriggering Isaac Sim simulation...")
     make_throwing_anim(usd_file, scaling)
+    print("✓ Simulation started!")
 
-    return str(out_file)
+    print("=" * 60)
+    print("Pipeline complete!")
+    print("=" * 60)
+
+    return str(glb_path)
+
+
+def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
+    """
+    Generate 3D mesh using ComfyUI's API directly.
+
+    Args:
+        image_path: Path to input image
+        job_id: Unique job identifier
+
+    Returns:
+        Path to generated GLB file
+    """
+    # Configuration
+    comfy_url = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
+    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", Path(__file__).parent.parent / "input"))
+    comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "output"))
+    workflow_path = Path(__file__).parent.parent / "workflows" / "api_prompt_strcnst.json"
+
+    # Ensure directories exist
+    comfy_input_dir.mkdir(parents=True, exist_ok=True)
+    comfy_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy image to ComfyUI input directory with unique name
+    image_filename = f"{job_id}_{Path(image_path).name}"
+    dest_image_path = comfy_input_dir / image_filename
+    shutil.copy2(image_path, dest_image_path)
+    print(f"✓ Image copied to ComfyUI input: {dest_image_path}")
+
+    # Load workflow template
+    with open(workflow_path, "r") as f:
+        workflow = json.load(f)
+
+    # Update workflow with image filename (node 112 is LoadImage)
+    workflow["112"]["inputs"]["image"] = image_filename
+
+    # Update filename prefix for output (node 89 is the output filename)
+    workflow["89"]["inputs"]["string"] = job_id
+
+    print(f"✓ Workflow configured for job {job_id}")
+
+    # Queue the prompt to ComfyUI
+    print("Queueing workflow to ComfyUI...")
+    prompt_data = {
+        "prompt": workflow,
+        "client_id": job_id
+    }
+
+    response = requests.post(f"{comfy_url}/prompt", json=prompt_data)
+    response.raise_for_status()
+
+    result = response.json()
+    prompt_id = result["prompt_id"]
+    print(f"✓ Workflow queued with prompt_id: {prompt_id}")
+
+    # Poll for completion
+    print("Waiting for ComfyUI to generate mesh...")
+    print("(This may take 30-60 seconds...)")
+
+    max_wait = 600  # 10 minutes max
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait:
+        # Check history for this prompt
+        history_response = requests.get(f"{comfy_url}/history/{prompt_id}")
+
+        if history_response.status_code == 200:
+            history = history_response.json()
+
+            if prompt_id in history:
+                prompt_history = history[prompt_id]
+
+                # Check if completed
+                if "outputs" in prompt_history:
+                    print("✓ ComfyUI generation complete!")
+
+                    # Find the output GLB file
+                    # Look for node 89 (SaveModel) outputs
+                    for node_id, node_output in prompt_history["outputs"].items():
+                        if "glb" in node_output or "meshes" in node_output:
+                            # The output structure varies, try to find the GLB filename
+                            if "meshes" in node_output:
+                                files = node_output["meshes"]
+                                if files and len(files) > 0:
+                                    glb_filename = files[0].get("filename", "")
+                                    if glb_filename:
+                                        glb_path = comfy_output_dir / glb_filename
+                                        if glb_path.exists():
+                                            # Move to processed directory
+                                            processed_dir = Path(image_path).parent.parent / "processed"
+                                            processed_dir.mkdir(parents=True, exist_ok=True)
+                                            final_path = processed_dir / f"{job_id}.glb"
+                                            shutil.copy2(glb_path, final_path)
+                                            return str(final_path)
+
+                    # Fallback: search output directory for recent GLB files
+                    print("Searching output directory for GLB file...")
+                    glb_files = list(comfy_output_dir.glob(f"*{job_id}*.glb"))
+
+                    if not glb_files:
+                        # Try finding any recent GLB
+                        glb_files = sorted(
+                            comfy_output_dir.glob("*.glb"),
+                            key=lambda p: p.stat().st_mtime,
+                            reverse=True
+                        )
+
+                    if glb_files:
+                        glb_path = glb_files[0]
+                        processed_dir = Path(image_path).parent.parent / "processed"
+                        processed_dir.mkdir(parents=True, exist_ok=True)
+                        final_path = processed_dir / f"{job_id}.glb"
+                        shutil.copy2(glb_path, final_path)
+                        return str(final_path)
+
+                    raise RuntimeError(f"ComfyUI completed but no GLB file found in {comfy_output_dir}")
+
+        # Wait before polling again
+        time.sleep(5)
+        print(".", end="", flush=True)
+
+    raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
 def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str:

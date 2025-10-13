@@ -1,49 +1,17 @@
-# Single-Instance Setup Guide for scan2wall
-
-**Complete installation guide for running scan2wall on a single powerful machine with Isaac Sim + ComfyUI.**
-
----
-
-## Overview
-
-This guide documents the installation of scan2wall in **single-instance mode**, where both ComfyUI (3D generation) and Isaac Sim (physics simulation) run on the same machine.
-
-**Hardware Used:**
-- NVIDIA H200 GPU (143GB VRAM)
-- 196GB RAM
-- Ubuntu 22.04 Linux
-
-**What Was Installed:**
-1. Isaac Sim 2.2.0 + Isaac Lab (via Docker)
-2. ComfyUI + Hunyuan 3D 2.1 models
-3. scan2wall Python environment
-4. Supporting tools (ffmpeg, etc.)
-
----
-
-## Installation Summary
-
-### Phase 1: Prerequisites (Already Configured)
-- ✅ NVIDIA Container Toolkit installed and configured
-- ✅ Docker with NVIDIA runtime support
-- ✅ CUDA 12.4 and drivers
-
-### Phase 2: Isaac Lab Installation
+### Phase 1: Isaac Lab Installation
 ```bash
 # 1. Clone Isaac Launchable
-cd ~
-git clone https://github.com/isaac-sim/isaac-launchable
-cd isaac-launchable/isaac-lab
+cd /workspace
+git clone https://github.com/isaac-sim/IsaacLab.git
+cd IsaacLab
+```
 
-# 2. Configure for localhost
-# Edit docker-compose.yml line 61: change ENV=brev to ENV=localhost
-sed -i 's/ENV=brev/ENV=localhost/g' docker-compose.yml
-
-# 3. Create .env file
-echo "DEV_NGINX_PORT=80" > .env
-
-# 4. Build and start containers (~10-15 minutes first time)
-docker compose up -d
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+bash miniconda.sh -b -p $HOME/miniconda3
+source ~/miniconda3/etc/profile.d/conda.sh
+conda init bash
+exec $SHELL
 ```
 
 **Containers Created:**

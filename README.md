@@ -28,41 +28,31 @@ A hackathon project for NVIDIA's Simulation Hack that combines phone camera capt
 
 ### Prerequisites
 
-**Flexible deployment options:**
-
-**Option A: Two-Instance Setup** (Recommended)
-1. **Linux instance** with NVIDIA GPU (8GB+ VRAM) - for 3D generation
-2. **Isaac Sim instance** - for physics simulation
-
-**Option B: Single-Instance Setup** (For demos/development)
-1. **One powerful machine** with 16GB+ VRAM GPU and Isaac Sim installed
+- **Linux** with NVIDIA GPU (16GB+ VRAM recommended)
+- **CUDA** toolkit installed
+- **50GB+ free disk space** for models and Isaac Lab
 
 ### Installation
 
-**Instance 1 (Linux + GPU):**
 ```bash
-# Clone and setup
+# Clone repository
 git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
 
-# Install dependencies
+# Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install main dependencies
 uv sync && uv pip install -e .
 
-# Setup ComfyUI and download models
+# Setup ComfyUI and download models (~8GB, takes ~15 min)
 cd 3d_gen
 bash setup_comfyui.sh
 bash modeldownload.sh
-```
+cd ..
 
-**Instance 2 (Isaac Sim):**
-```bash
-# Follow: https://github.com/isaac-sim/isaac-launchable
-# Then clone repo into workspace
-git clone https://github.com/max-seeli/scan2wall
-cd scan2wall
-uv sync && uv pip install -e .
-# Install ffmpeg
+# Setup Isaac Lab (~10GB, takes ~20 min)
+bash setup_isaac.sh
 ```
 
 ### Configuration
@@ -71,37 +61,25 @@ uv sync && uv pip install -e .
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` and add your Gemini API key:
 - **Required**: `GOOGLE_API_KEY` - Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
-- **Required**: `ISAAC_INSTANCE_ADDRESS`
-  - Two-instance: `https://<PORT>-<INSTANCE>.brevlab.com/process`
-  - Single-instance: `http://127.0.0.1:8012/process`
-- **Optional**: `PORT` (default: 49100)
-- **Optional**: Path customization (auto-detected by default)
+- Everything else is pre-configured for single-machine setup!
 
 ### Running
 
-**Instance 1 - Terminal 1 (ComfyUI):**
+**Option 1: Automated (with tmux)**
 ```bash
-cd 3d_gen
-source .venv/bin/activate
-cd ComfyUI
-python main.py --listen 0.0.0.0 --port 8188
+./start.sh auto
 ```
+This opens 3 split terminals automatically. Use `Ctrl+B` then number keys to switch between them.
 
-**Instance 1 - Terminal 2 (ComfyUI API):**
+**Option 2: Manual (3 separate terminals)**
 ```bash
-cd 3d_gen
-source .venv/bin/activate
-python server.py
+./start.sh
 ```
+This prints commands to run in 3 separate terminal windows.
 
-**Instance 2 (Upload Server):**
-```bash
-uv run src/scan2wall/image_collection/run.py
-```
-
-Scan the QR code or visit the URL on your phone to start!
+Once started, scan the QR code or visit the URL on your phone to upload photos!
 
 ## Features
 
