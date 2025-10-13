@@ -150,6 +150,9 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     }
 
     response = requests.post(f"{comfy_url}/prompt", json=prompt_data)
+    if response.status_code != 200:
+        print(f"[ERROR] Status: {response.status_code}")
+        print(f"[ERROR] Response: {response.text}")
     response.raise_for_status()
 
     result = response.json()

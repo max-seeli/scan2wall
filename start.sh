@@ -37,9 +37,9 @@ if [ ! -d "3d_gen/ComfyUI" ]; then
     exit 1
 fi
 
-if [ ! -d "/workspace/isaac" ]; then
-    echo -e "${YELLOW}⚠  Isaac Lab not found. Please run setup first:${NC}"
-    echo "   bash setup_isaac.sh"
+if [ ! -d "/workspace/IsaacLab" ]; then
+    echo -e "${YELLOW}⚠  Isaac Lab not found at /workspace/IsaacLab${NC}"
+    echo "   Please see SINGLE_INSTANCE_SETUP.md for installation"
     exit 1
 fi
 
@@ -112,7 +112,8 @@ if [ "$MODE" = "manual" ]; then
     echo "  python 3d_gen/image_collection/run.py"
     echo ""
     echo -e "${GREEN}Terminal 3 - Isaac Lab (ready for scripts):${NC}"
-    echo "  cd /workspace/isaac"
+    echo "  source /workspace/isaac_venv/bin/activate"
+    echo "  cd /workspace/IsaacLab"
     echo "  ./isaaclab.sh -p"
     echo ""
     echo "=========================================="
