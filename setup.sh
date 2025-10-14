@@ -67,8 +67,8 @@ echo "Phase 1: Isaac Sim + Isaac Lab"
 echo "=========================================="
 echo ""
 
-if [ -f "./scripts/install/isaac.sh" ]; then
-    bash ./scripts/install/isaac.sh
+if [ -f "./scan2wall/scripts/install/isaac.sh" ]; then
+    bash ./scan2wall/scripts/install/isaac.sh
 else
     echo -e "${RED}✗ Error: scripts/install/isaac.sh not found${NC}"
     exit 1
@@ -88,8 +88,8 @@ echo "Phase 2: ComfyUI (3D Generation)"
 echo "=========================================="
 echo ""
 
-if [ -f "./scripts/install/comfyui.sh" ]; then
-    bash ./scripts/install/comfyui.sh
+if [ -f "./scan2wall/scripts/install/comfyui.sh" ]; then
+    bash ./scan2wall/scripts/install/comfyui.sh
     
 
     echo ""
@@ -122,8 +122,8 @@ echo "Phase 3: scan2wall Package"
 echo "=========================================="
 echo ""
 
-if [ -f "./scripts/install/scan2wall.sh" ]; then
-    bash ./scripts/install/scan2wall.sh
+if [ -f "./scan2wall/scripts/install/scan2wall.sh" ]; then
+    bash ./scan2wall/scripts/install/scan2wall.sh
 else
     echo -e "${RED}✗ Error: scripts/install/scan2wall.sh not found${NC}"
     exit 1

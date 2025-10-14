@@ -25,7 +25,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Installation directories (within project)
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ISAAC_DIR="$PROJECT_ROOT/isaac"
 VENV_DIR="$ISAAC_DIR/venv"
 ISAAC_LAB_DIR="$ISAAC_DIR/IsaacLab"
@@ -147,6 +147,9 @@ echo ""
 # Install Isaac Sim via uv pip
 # ============================================================================
 
+# Always set EULA acceptance for any Isaac Sim imports
+export ISAACSIM_ACCEPT_EULA=1
+
 if [ "$SKIP_ISAAC_SIM_INSTALL" = "true" ]; then
     echo "Isaac Sim already installed, skipping..."
 else
@@ -159,7 +162,9 @@ else
     echo ""
     echo -e "${GREEN}✓${NC} Isaac Sim installed"
     echo ""
-    
+
+    export ISAACSIM_ACCEPT_EULA=1
+
     # Verify Isaac Sim installation
     echo "Verifying Isaac Sim installation..."
     python -c 'import isaacsim; print("Isaac Sim version:", isaacsim.__version__)' || {
@@ -174,23 +179,13 @@ echo ""
 # ============================================================================
 # Clone Isaac Lab
 # ============================================================================
-
 echo "Installing Isaac Lab..."
 echo ""
-
 if [ -d "$ISAAC_LAB_DIR" ]; then
     echo -e "${YELLOW}⚠${NC} Isaac Lab directory already exists at $ISAAC_LAB_DIR"
-    read -p "Remove and reinstall? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Removing existing installation..."
-        rm -rf "$ISAAC_LAB_DIR"
-    else
-        echo "Keeping existing installation. Skipping Isaac Lab clone."
-        cd "$ISAAC_LAB_DIR"
-    fi
+    echo "Keeping existing installation. Skipping Isaac Lab clone."
+    cd "$ISAAC_LAB_DIR"
 fi
-
 if [ ! -d "$ISAAC_LAB_DIR" ]; then
     cd "$ISAAC_DIR"
     echo "Cloning Isaac Lab repository..."
@@ -200,52 +195,51 @@ if [ ! -d "$ISAAC_LAB_DIR" ]; then
 else
     cd "$ISAAC_LAB_DIR"
 fi
-
 echo ""
-
 # ============================================================================
 # Run Isaac Lab Installation
 # ============================================================================
+echo "Checking Isaac Lab installation..."
 
-echo "Running Isaac Lab installation..."
-
-if [ "$MINIMAL_INSTALL" = "true" ]; then
-    echo "Installing minimal Isaac Lab (core only, no RL/ML extensions)..."
-    echo ""
-    echo -e "${YELLOW}This may take 3-5 minutes...${NC}"
-    echo ""
-
-    # Make sure venv is still activated
-    source "$VENV_DIR/bin/activate"
-
-    # Install only the core Isaac Lab package
-    uv pip install -e source/isaaclab
-    # Install minimal additional dependencies needed by scan2wall scripts
-    uv pip install warp-lang opencv-python
-
-    echo ""
-    echo -e "${GREEN}✓${NC} Minimal Isaac Lab installation complete"
+# Check if Isaac Lab is already installed
+source "$VENV_DIR/bin/activate"
+if python -c "import omni.isaac.lab" 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} Isaac Lab already installed in venv, skipping..."
 else
-    echo "This will:"
-    echo "  - Install Isaac Lab Python dependencies"
-    echo "  - Install PyTorch, Warp, and other tools"
-    echo "  - Sync Isaac Lab extensions (includes RL/ML frameworks)"
+    echo "Running Isaac Lab installation..."
+    
+    if [ "$MINIMAL_INSTALL" = "true" ]; then
+        echo "Installing minimal Isaac Lab (core only, no RL/ML extensions)..."
+        echo ""
+        echo -e "${YELLOW}This may take 3-5 minutes...${NC}"
+        echo ""
+        
+        # Install only the core Isaac Lab package
+        uv pip install -e source/isaaclab
+        # Install minimal additional dependencies needed by scan2wall scripts
+        uv pip install warp-lang opencv-python
+        
+        echo ""
+        echo -e "${GREEN}✓${NC} Minimal Isaac Lab installation complete"
+    else
+        echo "This will:"
+        echo "  - Install Isaac Lab Python dependencies"
+        echo "  - Install PyTorch, Warp, and other tools"
+        echo "  - Sync Isaac Lab extensions (includes RL/ML frameworks)"
+        echo ""
+        echo -e "${YELLOW}This may take 20-25 minutes...${NC}"
+        echo ""
+        echo "Tip: For scan2wall, you only need minimal install:"
+        echo "  ./setup_isaac.sh --minimal"
+        echo ""
+        
+        # Run the full Isaac Lab installer
+        ./isaaclab.sh --install
+    fi
+    
     echo ""
-    echo -e "${YELLOW}This may take 20-25 minutes...${NC}"
-    echo ""
-    echo "Tip: For scan2wall, you only need minimal install:"
-    echo "  ./setup_isaac.sh --minimal"
-    echo ""
-
-    # Make sure venv is still activated
-    source "$VENV_DIR/bin/activate"
-
-    # Run the full Isaac Lab installer
-    ./isaaclab.sh --install
+    echo -e "${GREEN}✓${NC} Isaac Lab installation complete"
 fi
-
-echo ""
-echo -e "${GREEN}✓${NC} Isaac Lab installation complete"
 echo ""
 
 # ============================================================================

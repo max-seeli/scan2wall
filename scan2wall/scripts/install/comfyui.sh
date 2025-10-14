@@ -5,7 +5,7 @@ echo "🚀 Setting up ComfyUI with uv (fast Python package manager)"
 echo "=========================================================="
 
 # Navigate to 3d_gen directory (where ComfyUI should be installed)
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 THREEGEN_DIR="$PROJECT_ROOT/3d_gen"
 
 echo "Installing ComfyUI in: $THREEGEN_DIR"
