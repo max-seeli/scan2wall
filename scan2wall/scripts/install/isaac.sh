@@ -219,10 +219,9 @@ if [ "$MINIMAL_INSTALL" = "true" ]; then
     source "$VENV_DIR/bin/activate"
 
     # Install only the core Isaac Lab package
-    pip install -e source/isaaclab
-
+    uv pip install -e source/isaaclab
     # Install minimal additional dependencies needed by scan2wall scripts
-    pip install warp-lang opencv-python
+    uv pip install warp-lang opencv-python
 
     echo ""
     echo -e "${GREEN}✓${NC} Minimal Isaac Lab installation complete"
