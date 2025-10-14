@@ -6,21 +6,16 @@ echo "Isaac Sim + Isaac Lab Installation Script"
 echo "=========================================="
 echo ""
 echo "This script will:"
-echo "  1. Install Python 3.11 (if needed)"
-echo "  2. Create virtual environment at /workspace/isaac_venv"
-echo "  3. Install Isaac Sim 5.0.0 via pip"
-echo "  4. Clone Isaac Lab to /workspace/IsaacLab"
-echo "  5. Install Isaac Lab dependencies"
+echo "  1. Install uv (if needed)"
+echo "  2. Install Python 3.11 (if needed)"
+echo "  3. Create virtual environment at /workspace/isaac_venv"
+echo "  4. Install Isaac Sim 5.0.0 via uv"
+echo "  5. Clone Isaac Lab to /workspace/IsaacLab"
+echo "  6. Install Isaac Lab dependencies"
 echo ""
 
 # Check for minimal install flag
-MINIMAL_INSTALL=false
-if [ "$1" = "--minimal" ]; then
-    MINIMAL_INSTALL=true
-    echo -e "${YELLOW}⚠${NC} Minimal install mode enabled"
-    echo "This will skip RL/ML dependencies (saves ~5GB and 10+ minutes)"
-    echo ""
-fi
+MINIMAL_INSTALL=true
 echo ""
 
 # Color codes for output
@@ -74,6 +69,24 @@ echo -e "${GREEN}All prerequisites satisfied!${NC}"
 echo ""
 
 # ============================================================================
+# Install uv
+# ============================================================================
+
+echo "Checking uv..."
+if command -v uv &> /dev/null; then
+    UV_VERSION=$(uv --version)
+    echo -e "${GREEN}✓${NC} uv already installed: $UV_VERSION"
+else
+    echo "uv not found. Installing..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Add uv to PATH for current session
+    export PATH="$HOME/.local/bin:$PATH"
+    echo -e "${GREEN}✓${NC} uv installed"
+fi
+
+echo ""
+
+# ============================================================================
 # Install Python 3.11
 # ============================================================================
 
@@ -91,48 +104,33 @@ fi
 echo ""
 
 # ============================================================================
-# Create Virtual Environment
+# Create Virtual Environment with uv
 # ============================================================================
 
 if [ -d "$VENV_DIR" ]; then
     echo -e "${YELLOW}⚠${NC} Virtual environment already exists at $VENV_DIR"
-    read -p "Remove and recreate? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Removing existing venv..."
-        rm -rf "$VENV_DIR"
-    else
-        echo "Keeping existing venv. Skipping venv creation."
-        echo "Activating existing venv..."
-        source "$VENV_DIR/bin/activate"
-    fi
+    echo "Removing existing venv..."
+    rm -rf "$VENV_DIR"
 fi
 
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating Python 3.11 virtual environment at $VENV_DIR..."
-    python3.11 -m venv "$VENV_DIR"
-    echo -e "${GREEN}✓${NC} Virtual environment created"
-fi
+echo "Creating Python 3.11 virtual environment with uv at $VENV_DIR..."
+uv venv "$VENV_DIR" --python 3.11
+echo -e "${GREEN}✓${NC} Virtual environment created"
 
 # Activate virtual environment
 source "$VENV_DIR/bin/activate"
 
-# Upgrade pip
-echo "Upgrading pip..."
-pip install --upgrade pip -q
-echo -e "${GREEN}✓${NC} pip upgraded"
-
 echo ""
 
 # ============================================================================
-# Install Isaac Sim via Pip
+# Install Isaac Sim via uv pip
 # ============================================================================
 
-echo "Installing Isaac Sim 5.0.0 via pip..."
-echo -e "${YELLOW}This will download ~91.5MB + dependencies (~50 packages)${NC}"
+echo "Installing Isaac Sim 5.0.0 via uv pip..."
+echo -e "${YELLOW}This will download several GB of dependencies (much faster with uv!)${NC}"
 echo ""
 
-pip install isaacsim==5.0.0.0 --extra-index-url https://pypi.nvidia.com
+uv pip install isaacsim[all,extscache]==5.0.0.0 --extra-index-url https://pypi.nvidia.com
 
 echo ""
 echo -e "${GREEN}✓${NC} Isaac Sim installed"
@@ -140,7 +138,7 @@ echo ""
 
 # Verify Isaac Sim installation
 echo "Verifying Isaac Sim installation..."
-python -c "import isaacsim; print('Isaac Sim version:', isaacsim.__version__)" || {
+python -c 'import isaacsim; print("Isaac Sim version:", isaacsim.__version__)' || {
     echo -e "${RED}✗ Error: Isaac Sim import failed${NC}"
     exit 1
 }

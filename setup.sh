@@ -18,15 +18,6 @@ echo "    • Install Python 3.11"
 echo "    • Create virtual environment"
 echo "    • Install Isaac Sim via pip"
 echo "    • Clone and setup Isaac Lab"
-
-if [ "$MINIMAL_INSTALL_FLAG" = "--minimal" ]; then
-    echo "    • Minimal install (core only, ~3GB, 10 mins)"
-else
-    echo "    • Full install (with RL/ML, ~8GB, 25 mins)"
-    echo ""
-    echo "  Tip: Use './setup.sh --minimal' for faster install (sufficient for scan2wall)"
-fi
-
 echo ""
 echo "  Phase 2: ComfyUI (3D Generation)"
 echo "    • Setup ComfyUI"
@@ -54,7 +45,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Ask for confirmation
-read -p "Continue with full installation? (y/N): " -n 1 -r
+read -p "Continue with installation? (y/N): " -n 1 -r
 echo
 echo
 
@@ -77,7 +68,7 @@ echo "=========================================="
 echo ""
 
 if [ -f "./setup_isaac.sh" ]; then
-    bash ./setup_isaac.sh $MINIMAL_INSTALL_FLAG
+    bash ./setup_isaac.sh
 else
     echo -e "${RED}✗ Error: setup_isaac.sh not found${NC}"
     exit 1
