@@ -18,10 +18,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Paths
-VENV_DIR="/workspace/isaac_venv"
-ISAAC_LAB_DIR="/workspace/IsaacLab"
-PROJECT_DIR="/workspace/scan2wall"
+# Paths (within project structure)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ISAAC_DIR="$PROJECT_DIR/isaac"
+VENV_DIR="$ISAAC_DIR/venv"
+ISAAC_LAB_DIR="$ISAAC_DIR/IsaacLab"
 
 # ============================================================================
 # Check Prerequisites
@@ -32,10 +33,10 @@ echo ""
 
 # Check if isaac_venv exists
 if [ ! -d "$VENV_DIR" ]; then
-    echo -e "${RED}✗ Error: isaac_venv not found at $VENV_DIR${NC}"
+    echo -e "${RED}✗ Error: isaac venv not found at $VENV_DIR${NC}"
     echo ""
-    echo "Please run setup_isaac.sh first:"
-    echo "  ./setup_isaac.sh"
+    echo "Please run isaac installation first:"
+    echo "  ./scripts/install/isaac.sh"
     exit 1
 fi
 echo -e "${GREEN}✓${NC} isaac_venv found"
@@ -44,8 +45,8 @@ echo -e "${GREEN}✓${NC} isaac_venv found"
 if [ ! -d "$ISAAC_LAB_DIR" ]; then
     echo -e "${RED}✗ Error: Isaac Lab not found at $ISAAC_LAB_DIR${NC}"
     echo ""
-    echo "Please run setup_isaac.sh first:"
-    echo "  ./setup_isaac.sh"
+    echo "Please run isaac installation first:"
+    echo "  ./scripts/install/isaac.sh"
     exit 1
 fi
 echo -e "${GREEN}✓${NC} Isaac Lab found"
@@ -189,14 +190,14 @@ echo ""
 echo "Next steps:"
 echo ""
 echo "1. Setup ComfyUI (if not already done):"
-echo "   cd 3d_gen"
-echo "   bash setup_comfyui.sh"
-echo "   bash modeldownload.sh"
+echo "   cd $PROJECT_DIR"
+echo "   bash scripts/install/comfyui.sh"
+echo "   cd 3d_gen && bash modeldownload.sh"
 echo ""
 echo "2. Start the application:"
-echo "   cd /workspace/scan2wall"
+echo "   cd $PROJECT_DIR"
 echo "   ./start.sh auto"
 echo ""
-echo -e "${YELLOW}Note:${NC} Always activate isaac_venv before running the app:"
-echo "      source /workspace/isaac_venv/bin/activate"
+echo -e "${YELLOW}Note:${NC} Always activate isaac venv before running the app:"
+echo "      source $VENV_DIR/bin/activate"
 echo ""

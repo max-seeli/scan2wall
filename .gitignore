@@ -50,3 +50,6 @@ torun.sh
 miniconda.sh
 3d_gen/input/*
 3d_gen/ComfyUI
+
+# --- Isaac Sim / Lab ---
+isaac/

@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "AI pipeline converting 2D phone photos into 3D physics simulations"
 readme = "README.md"
 authors = [
-    { name = "Max Seeliger", email = "maximilian.seeliger@gmail.com" }
+    { name = "Andrea Pozzetti", email = "andrea@pozzetti.it" },
+    { name = "Max Seeliger", email = "maximilian.seeliger@gmail.com" },
+    { name = "Patrick Styll", email = "styllpatrick@gmail.com" },
+    { name = "Valentin Vogt", email = "vogtva@student.ethz.ch" }
 ]
 requires-python = ">=3.11"
 dependencies = [

@@ -12,7 +12,7 @@ import subprocess
 import sys
 # Add current directory to path to import from 3d_gen
 sys.path.insert(0, str(Path(__file__).parent))
-from utils.paths import get_isaac_scripts_dir, get_assets_csv
+from scan2wall.utils.paths import get_isaac_scripts_dir, get_assets_csv
 
 
 def make_throwing_anim(file: str, scaling: float = 1.0):

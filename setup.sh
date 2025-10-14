@@ -67,10 +67,10 @@ echo "Phase 1: Isaac Sim + Isaac Lab"
 echo "=========================================="
 echo ""
 
-if [ -f "./setup_isaac.sh" ]; then
-    bash ./setup_isaac.sh
+if [ -f "./scripts/install/isaac.sh" ]; then
+    bash ./scripts/install/isaac.sh
 else
-    echo -e "${RED}✗ Error: setup_isaac.sh not found${NC}"
+    echo -e "${RED}✗ Error: scripts/install/isaac.sh not found${NC}"
     exit 1
 fi
 
@@ -88,22 +88,23 @@ echo "Phase 2: ComfyUI (3D Generation)"
 echo "=========================================="
 echo ""
 
-if [ -f "./3d_gen/setup_comfyui.sh" ]; then
-    cd 3d_gen
-    bash setup_comfyui.sh
+if [ -f "./scripts/install/comfyui.sh" ]; then
+    bash ./scripts/install/comfyui.sh
     
+
     echo ""
     echo "Downloading Hunyuan3D models..."
-    if [ -f "./modeldownload.sh" ]; then
+    if [ -f "./3d_gen/modeldownload.sh" ]; then
+        cd 3d_gen
         bash modeldownload.sh
+        cd ..
     else
-        echo -e "${YELLOW}⚠ Warning: modeldownload.sh not found${NC}"
+        echo -e "${YELLOW}⚠ Warning: 3d_gen/modeldownload.sh not found${NC}"
         echo "You may need to download models manually later"
     fi
-    
-    cd ..
+
 else
-    echo -e "${YELLOW}⚠ Warning: 3d_gen/setup_comfyui.sh not found${NC}"
+    echo -e "${YELLOW}⚠ Warning: scripts/install/comfyui.sh not found${NC}"
     echo "Skipping ComfyUI setup. You'll need to set it up manually."
 fi
 
@@ -121,10 +122,10 @@ echo "Phase 3: scan2wall Package"
 echo "=========================================="
 echo ""
 
-if [ -f "./setup_scan2wall.sh" ]; then
-    bash ./setup_scan2wall.sh
+if [ -f "./scripts/install/scan2wall.sh" ]; then
+    bash ./scripts/install/scan2wall.sh
 else
-    echo -e "${RED}✗ Error: setup_scan2wall.sh not found${NC}"
+    echo -e "${RED}✗ Error: scripts/install/scan2wall.sh not found${NC}"
     exit 1
 fi
 

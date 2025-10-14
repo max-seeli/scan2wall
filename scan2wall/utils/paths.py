@@ -17,7 +17,7 @@ def _get_project_root() -> Path:
     Returns:
         Path to project root directory (where pyproject.toml lives)
     """
-    # This file is at: PROJECT_ROOT/3d_gen/utils/paths.py
+    # This file is at: PROJECT_ROOT/scan2wall/utils/paths.py
     # So go up 3 levels to get to PROJECT_ROOT
     current_file = Path(__file__).resolve()
     return current_file.parent.parent.parent
@@ -42,7 +42,7 @@ def get_isaac_workspace() -> Path:
     """
     Get Isaac Lab workspace directory (where USD files are saved).
 
-    Uses ISAAC_WORKSPACE env var if set, otherwise defaults to /workspace/IsaacLab
+    Uses ISAAC_WORKSPACE env var if set, otherwise defaults to PROJECT_ROOT/isaac/IsaacLab
 
     Returns:
         Path to Isaac workspace
@@ -50,7 +50,8 @@ def get_isaac_workspace() -> Path:
     env_workspace = os.getenv("ISAAC_WORKSPACE")
     if env_workspace:
         return Path(env_workspace).resolve()
-    return Path("/workspace/IsaacLab")
+    # Default: isaac/IsaacLab within project
+    return get_project_root() / "isaac" / "IsaacLab"
 
 
 def get_isaac_scripts_dir() -> Path:

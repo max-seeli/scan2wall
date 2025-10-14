@@ -4,9 +4,12 @@ set -e  # Stop on first error
 echo "🚀 Setting up ComfyUI with uv (fast Python package manager)"
 echo "=========================================================="
 
-# Get the script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+# Navigate to 3d_gen directory (where ComfyUI should be installed)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+THREEGEN_DIR="$PROJECT_ROOT/3d_gen"
+
+echo "Installing ComfyUI in: $THREEGEN_DIR"
+cd "$THREEGEN_DIR"
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
@@ -120,7 +123,7 @@ fi
 
 echo ""
 echo "📋 Copying custom node configurations..."
-cd "$SCRIPT_DIR"
+cd "$THREEGEN_DIR"
 
 # Copy andrea-nodes
 if [ -d "andrea-nodes" ]; then

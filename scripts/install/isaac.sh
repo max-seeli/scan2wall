@@ -24,10 +24,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Installation directories
-VENV_DIR="/workspace/isaac_venv"
-ISAAC_LAB_DIR="/workspace/IsaacLab"
-WORKSPACE_DIR="/workspace"
+# Installation directories (within project)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ISAAC_DIR="$PROJECT_ROOT/isaac"
+VENV_DIR="$ISAAC_DIR/venv"
+ISAAC_LAB_DIR="$ISAAC_DIR/IsaacLab"
+
+echo "Installing Isaac Sim + Lab in: $ISAAC_DIR"
+echo ""
+
+# Create isaac directory
+mkdir -p "$ISAAC_DIR"
 
 # ============================================================================
 # Prerequisites Check
@@ -52,7 +59,7 @@ echo -e "${GREEN}✓${NC} NVIDIA GPU detected:"
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | head -1
 
 # Check disk space (need at least 150GB for full installation)
-AVAILABLE_SPACE=$(df -BG "$WORKSPACE_DIR" | tail -1 | awk '{print $4}' | sed 's/G//')
+AVAILABLE_SPACE=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | sed 's/G//')
 if [ "$AVAILABLE_SPACE" -lt 150 ]; then
     echo -e "${YELLOW}⚠${NC} Warning: Low disk space. Have ${AVAILABLE_SPACE}GB, recommend 150GB+"
     read -p "Continue anyway? (y/N): " -n 1 -r
@@ -106,19 +113,33 @@ echo ""
 # ============================================================================
 # Create Virtual Environment with uv
 # ============================================================================
-
 if [ -d "$VENV_DIR" ]; then
     echo -e "${YELLOW}⚠${NC} Virtual environment already exists at $VENV_DIR"
-    echo "Removing existing venv..."
-    rm -rf "$VENV_DIR"
+    
+    # Check if Isaac Sim is already working in existing venv
+    echo "Checking if Isaac Sim is already installed..."
+    if source "$VENV_DIR/bin/activate" 2>/dev/null && python -c "import isaacsim; print('Isaac Sim version:', isaacsim.__version__)" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} Isaac Sim already working in existing venv"
+        echo "Skipping Isaac Sim installation..."
+        SKIP_ISAAC_SIM_INSTALL=true
+    else
+        echo -e "${RED}✗${NC} Existing venv is broken or Isaac Sim not installed"
+        echo "Removing and recreating venv..."
+        rm -rf "$VENV_DIR"
+        SKIP_ISAAC_SIM_INSTALL=false
+    fi
+else
+    SKIP_ISAAC_SIM_INSTALL=false
 fi
 
-echo "Creating Python 3.11 virtual environment with uv at $VENV_DIR..."
-uv venv "$VENV_DIR" --python 3.11
-echo -e "${GREEN}✓${NC} Virtual environment created"
-
-# Activate virtual environment
-source "$VENV_DIR/bin/activate"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating Python 3.11 virtual environment with uv at $VENV_DIR..."
+    uv venv "$VENV_DIR" --python 3.11
+    echo -e "${GREEN}✓${NC} Virtual environment created"
+    
+    # Activate virtual environment
+    source "$VENV_DIR/bin/activate"
+fi
 
 echo ""
 
@@ -126,23 +147,28 @@ echo ""
 # Install Isaac Sim via uv pip
 # ============================================================================
 
-echo "Installing Isaac Sim 5.0.0 via uv pip..."
-echo -e "${YELLOW}This will download several GB of dependencies (much faster with uv!)${NC}"
-echo ""
+if [ "$SKIP_ISAAC_SIM_INSTALL" = "true" ]; then
+    echo "Isaac Sim already installed, skipping..."
+else
+    echo "Installing Isaac Sim 5.0.0 via uv pip..."
+    echo -e "${YELLOW}This will download several GB of dependencies (much faster with uv!)${NC}"
+    echo ""
+    
+    uv pip install isaacsim[all,extscache]==5.0.0.0 --extra-index-url https://pypi.nvidia.com
+    
+    echo ""
+    echo -e "${GREEN}✓${NC} Isaac Sim installed"
+    echo ""
+    
+    # Verify Isaac Sim installation
+    echo "Verifying Isaac Sim installation..."
+    python -c 'import isaacsim; print("Isaac Sim version:", isaacsim.__version__)' || {
+        echo -e "${RED}✗ Error: Isaac Sim import failed${NC}"
+        exit 1
+    }
+    echo -e "${GREEN}✓${NC} Isaac Sim import successful"
+fi
 
-uv pip install isaacsim[all,extscache]==5.0.0.0 --extra-index-url https://pypi.nvidia.com
-
-echo ""
-echo -e "${GREEN}✓${NC} Isaac Sim installed"
-echo ""
-
-# Verify Isaac Sim installation
-echo "Verifying Isaac Sim installation..."
-python -c 'import isaacsim; print("Isaac Sim version:", isaacsim.__version__)' || {
-    echo -e "${RED}✗ Error: Isaac Sim import failed${NC}"
-    exit 1
-}
-echo -e "${GREEN}✓${NC} Isaac Sim import successful"
 echo ""
 
 # ============================================================================
@@ -166,10 +192,10 @@ if [ -d "$ISAAC_LAB_DIR" ]; then
 fi
 
 if [ ! -d "$ISAAC_LAB_DIR" ]; then
-    cd "$WORKSPACE_DIR"
+    cd "$ISAAC_DIR"
     echo "Cloning Isaac Lab repository..."
     git clone --depth 1 https://github.com/isaac-sim/IsaacLab.git
-    cd "$ISAAC_LAB_DIR"
+    cd IsaacLab
     echo -e "${GREEN}✓${NC} Isaac Lab cloned to $ISAAC_LAB_DIR"
 else
     cd "$ISAAC_LAB_DIR"
@@ -243,7 +269,7 @@ echo ""
 # ============================================================================
 
 echo "Configuring scan2wall environment..."
-cd /workspace/scan2wall
+cd "$PROJECT_ROOT"
 
 # Update .env if it exists, otherwise update .env.example
 if [ -f ".env" ]; then
@@ -322,9 +348,9 @@ echo "   cd $ISAAC_LAB_DIR"
 echo "   ./isaaclab.sh -p"
 echo ""
 echo "3. Continue scan2wall setup:"
-echo "   cd /workspace/scan2wall"
-echo "   ./setup_scan2wall.sh"
+echo "   cd $PROJECT_ROOT"
+echo "   ./scripts/install/scan2wall.sh"
 echo ""
 echo -e "${YELLOW}Note:${NC} Always activate the venv before running Isaac scripts:"
-echo "      source /workspace/isaac_venv/bin/activate"
+echo "      source $VENV_DIR/bin/activate"
 echo ""
