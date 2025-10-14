@@ -52,4 +52,5 @@ miniconda.sh
 3d_gen/ComfyUI
 
 # --- Isaac Sim / Lab ---
-isaac/
+isaac/venv/
+isaac/IsaacLab/
