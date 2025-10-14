@@ -19,7 +19,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Paths (within project structure)
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ISAAC_DIR="$PROJECT_DIR/isaac"
 VENV_DIR="$ISAAC_DIR/venv"
 ISAAC_LAB_DIR="$ISAAC_DIR/IsaacLab"
@@ -72,7 +72,7 @@ echo ""
 cd "$PROJECT_DIR"
 
 echo "Installing scan2wall package in editable mode..."
-pip install -e .
+uv pip install -e .
 
 echo ""
 echo -e "${GREEN}✓${NC} scan2wall package installed"

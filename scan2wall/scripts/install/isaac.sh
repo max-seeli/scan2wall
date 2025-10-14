@@ -203,7 +203,7 @@ echo "Checking Isaac Lab installation..."
 
 # Check if Isaac Lab is already installed
 source "$VENV_DIR/bin/activate"
-if python -c "import omni.isaac.lab" 2>/dev/null; then
+if uv pip list | grep -q "isaaclab"; then
     echo -e "${GREEN}✓${NC} Isaac Lab already installed in venv, skipping..."
 else
     echo "Running Isaac Lab installation..."

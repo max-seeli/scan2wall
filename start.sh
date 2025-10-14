@@ -16,8 +16,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Paths
-VENV_DIR="/workspace/isaac_venv"
-ISAAC_LAB_DIR="/workspace/IsaacLab"
+VENV_DIR="/workspace/scan2wall/isaac/venv"
+ISAAC_LAB_DIR="/workspace/scan2wall/isaac/IsaacLab"
 
 echo "=========================================="
 echo "       scan2wall Startup"
@@ -241,37 +241,6 @@ if [ "$MODE" = "auto" ] || [ "$MODE" = "tmux" ]; then
     fi
 fi
 
-if [ "$MODE" = "manual" ]; then
-    # Manual mode - print instructions
-    echo -e "${BLUE}Manual Mode${NC}"
-    echo "Open 3 separate terminal windows and run:"
-    echo ""
-    echo -e "${GREEN}Terminal 1 - ComfyUI:${NC}"
-    echo "  cd $(pwd)/3d_gen"
-    echo "  source .venv/bin/activate"
-    echo "  cd ComfyUI"
-    echo "  python main.py --listen 0.0.0.0 --port 8188"
-    echo ""
-    echo -e "${GREEN}Terminal 2 - Upload Server:${NC}"
-    echo "  cd $(pwd)"
-    echo "  source $VENV_DIR/bin/activate"
-    echo "  python 3d_gen/image_collection/run.py"
-    echo ""
-    echo -e "${GREEN}Terminal 3 - Isaac Lab (ready for scripts):${NC}"
-    echo "  source $VENV_DIR/bin/activate"
-    echo "  cd $ISAAC_LAB_DIR"
-    echo "  ./isaaclab.sh -p"
-    echo ""
-    echo "=========================================="
-    echo "Once started, access the app at:"
-    echo "  • ComfyUI:  http://localhost:8188"
-    echo "  • Upload:   http://localhost:49100"
-    echo "=========================================="
-    echo ""
-    echo "Tip: Run './start.sh auto' for automatic startup with tmux"
-    exit 0
-fi
-
 # Background mode (not recommended but available)
 if [ "$MODE" = "background" ]; then
     echo "Starting services in background..."
@@ -287,7 +256,7 @@ if [ "$MODE" = "background" ]; then
     COMFYUI_PID=$!
     echo -e "${GREEN}✓${NC} ComfyUI started (PID: $COMFYUI_PID)"
 
-    # Start upload server (using isaac_venv)
+    # Start upload server (using scan2wall)
     cd "$SCRIPT_DIR"
     source "$VENV_DIR/bin/activate"
     nohup python 3d_gen/image_collection/run.py > "$SCRIPT_DIR/logs/upload.log" 2>&1 &

@@ -16,12 +16,13 @@ fi
 
 source .venv/bin/activate
 
+# Disable tracking prompt BEFORE installing comfy-cli
+export COMFY_CLI_SKIP_PROMPT=1
+export DO_NOT_TRACK=1
+
 # Install comfy-cli if not already installed
 echo "📦 Installing comfy-cli..."
 uv pip install comfy-cli
-
-# Disable tracking prompt
-export COMFY_CLI_SKIP_PROMPT=1
 
 # Navigate to ComfyUI directory
 cd ComfyUI
