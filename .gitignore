@@ -22,9 +22,15 @@ dist/
 .venv/
 venv/
 env/
+# Lock files (but keep uv.lock for reproducibility)
 *.lock
+!uv.lock
+# YAML files (but keep important configs)
 *.yml
-*.toml
+!.github/**/*.yml
+# TOML files (but keep project configs)
+!pyproject.toml
+!**/pyproject.toml
 
 # --- OS junk ---
 .DS_Store

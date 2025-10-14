@@ -17,10 +17,10 @@ def _get_project_root() -> Path:
     Returns:
         Path to project root directory (where pyproject.toml lives)
     """
-    # This file is at: PROJECT_ROOT/src/scan2wall/utils/paths.py
+    # This file is at: PROJECT_ROOT/3d_gen/utils/paths.py
     # So go up 3 levels to get to PROJECT_ROOT
     current_file = Path(__file__).resolve()
-    return current_file.parent.parent.parent.parent
+    return current_file.parent.parent.parent
 
 
 def get_project_root() -> Path:

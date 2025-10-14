@@ -148,6 +148,7 @@ echo ""
 echo "📦 Installing final dependencies..."
 uv pip install transformers==4.46.3
 uv pip install pynanoinstantmeshes
+uv pip install hf_transfer
 uv pip install fastapi python-multipart uvicorn
 echo ""
 echo "✅ ComfyUI setup complete!"

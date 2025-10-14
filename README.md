@@ -2,7 +2,9 @@
 
 **Scan objects and simulate throwing them at a wall using AI and physics.**
 
-![Demo](images/loop.gif)
+![Demo](docs/black_bottle.webp)
+![Demo](docs/loop.gif)
+![Demo](docs/ComfyUI.png)
 
 A hackathon project for NVIDIA's Simulation Hack that combines phone camera capture, AI-powered 3D mesh generation, material property inference, and realistic physics simulation.
 
@@ -34,23 +36,22 @@ A hackathon project for NVIDIA's Simulation Hack that combines phone camera capt
 
 ### Installation
 
+**One-line install (recommended):**
 ```bash
-# Clone repository
 git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
-
-# Install Python dependencies for upload server
-pip install fastapi uvicorn python-multipart python-dotenv pillow requests google-generativeai qrcode
-
-# Setup ComfyUI and download models (~8GB, takes ~15 min)
-cd 3d_gen
-bash setup_comfyui.sh
-bash modeldownload.sh
-cd ..
-
-# Setup Isaac Lab (~10GB, takes ~20 min)
-# Follow instructions at: https://github.com/isaac-sim/IsaacLab
+./setup.sh --minimal
 ```
+
+This installs everything you need in 20-25 minutes.
+
+**Or full install with RL/ML frameworks:**
+```bash
+./setup.sh
+```
+Takes 30-40 minutes, installs ~5GB of extra dependencies (not needed for scan2wall).
+
+See [MINIMAL_ISAAC_INSTALL.md](MINIMAL_ISAAC_INSTALL.md) for details on what's installed.
 
 ### Configuration
 

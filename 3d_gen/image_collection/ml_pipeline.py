@@ -259,15 +259,16 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
     # Ensure output directory exists
     usd_output.mkdir(parents=True, exist_ok=True)
 
+    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment
     cmd = (
-        f"python {convert_script} "
+        f"/workspace/IsaacLab/isaaclab.sh -p {convert_script} "
         f"{out_file} {output_path} "
         f"--kit_args='--headless' {m} {df_arg} {ds_arg}"
     )
 
     # Spawn conversion process
     proc = subprocess.Popen(
-        ["/bin/bash", "-lic", cmd],
+        ["/bin/bash", "-c", cmd],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         start_new_session=True,
@@ -300,14 +301,15 @@ def make_throwing_anim(file: str, scaling: float = 1.0):
     isaac_scripts = get_isaac_scripts_dir()
     sim_script = isaac_scripts / "test_place_obj_video.py"
 
+    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment
     cmd = (
-        f"python {sim_script} "
+        f"/workspace/IsaacLab/isaaclab.sh -p {sim_script} "
         f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window'"
     )
 
     # Spawn simulation in background (fire-and-forget)
     subprocess.Popen(
-        ["/bin/bash", "-lic", cmd],
+        ["/bin/bash", "-c", cmd],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,

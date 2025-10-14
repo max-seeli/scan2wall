@@ -1,12 +1,12 @@
 [project]
 name = "scan2wall"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI pipeline converting 2D phone photos into 3D physics simulations"
 readme = "README.md"
 authors = [
     { name = "Max Seeliger", email = "maximilian.seeliger@gmail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111.0",
     "google-generativeai>=0.8.5",
