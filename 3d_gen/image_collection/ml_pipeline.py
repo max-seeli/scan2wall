@@ -116,7 +116,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     """
     # Configuration
     comfy_url = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
-    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", Path(__file__).parent.parent / "input"))
+    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "input"))
     comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "output"))
     workflow_path = Path(__file__).parent.parent / "workflows" / "api_prompt_strcnst.json"
 
@@ -259,12 +259,23 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
     # Ensure output directory exists
     usd_output.mkdir(parents=True, exist_ok=True)
 
-    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment
+    # Convert host paths to container paths
+    # Host: /home/ubuntu/scan2wall/... → Container: /workspace/scan2wall/...
+    container_glb_path = str(out_file).replace("/home/ubuntu/scan2wall", "/workspace/scan2wall")
+    container_output_path = str(output_path).replace("/home/ubuntu/scan2wall", "/workspace")
+    container_convert_script = "/workspace/scan2wall/scan2wall/isaac_scripts/convert_mesh.py"
+
+    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment (in Docker)
     cmd = (
-        f"/workspace/IsaacLab/isaaclab.sh -p {convert_script} "
-        f"{out_file} {output_path} "
-        f"--kit_args='--headless' {m} {df_arg} {ds_arg}"
+        f"docker exec vscode bash -c '"
+        f"cd /workspace/isaaclab && "
+        f"./isaaclab.sh -p {container_convert_script} "
+        f"{container_glb_path} {container_output_path} "
+        f"--kit_args=\"--headless\" {m} {df_arg} {ds_arg}"
+        f"'"
     )
+
+    print(f"Running command: {cmd}")
 
     # Spawn conversion process
     proc = subprocess.Popen(
@@ -298,14 +309,20 @@ def make_throwing_anim(file: str, scaling: float = 1.0):
     """
     print("Creating throwing animation simulation...")
 
-    isaac_scripts = get_isaac_scripts_dir()
-    sim_script = isaac_scripts / "test_place_obj_video.py"
+    # Convert host paths to container paths
+    container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
+    container_sim_script = "/workspace/scan2wall/scan2wall/isaac_scripts/test_place_obj_video.py"
 
-    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment
+    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment (in Docker)
     cmd = (
-        f"/workspace/IsaacLab/isaaclab.sh -p {sim_script} "
-        f"--video --usd_path_abs '{file}' --scaling_factor {scaling} --kit_args='--no-window'"
+        f"docker exec vscode bash -c '"
+        f"cd /workspace/isaaclab && "
+        f"./isaaclab.sh -p {container_sim_script} "
+        f"--video --out_dir /workspace/recordings --usd_path_abs \"{container_usd_path}\" --scaling_factor {scaling} --kit_args=\"--no-window\""
+        f"'"
     )
+
+    print(f"Running command: {cmd}")
 
     # Spawn simulation in background (fire-and-forget)
     subprocess.Popen(

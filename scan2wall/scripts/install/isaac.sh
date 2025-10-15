@@ -2,20 +2,15 @@
 set -e  # Exit on error
 
 echo "=========================================="
-echo "Isaac Sim + Isaac Lab Installation Script"
+echo "Isaac Sim + Isaac Lab Docker Setup"
 echo "=========================================="
 echo ""
 echo "This script will:"
-echo "  1. Install uv (if needed)"
-echo "  2. Install Python 3.11 (if needed)"
-echo "  3. Create virtual environment at /workspace/isaac_venv"
-echo "  4. Install Isaac Sim 5.0.0 via uv"
-echo "  5. Clone Isaac Lab to /workspace/IsaacLab"
-echo "  6. Install Isaac Lab dependencies"
-echo ""
-
-# Check for minimal install flag
-MINIMAL_INSTALL=true
+echo "  1. Check Docker prerequisites"
+echo "  2. Clone isaac-launchable (if needed)"
+echo "  3. Start Isaac Lab Docker containers"
+echo "  4. Verify containers are running"
+echo "  5. Configure environment variables"
 echo ""
 
 # Color codes for output
@@ -24,13 +19,19 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Check if running non-interactively (from setup.sh or piped input)
+NON_INTERACTIVE=false
+if [ ! -t 0 ]; then
+    NON_INTERACTIVE=true
+fi
+
 # Installation directories (within project)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ISAAC_DIR="$PROJECT_ROOT/isaac"
-VENV_DIR="$ISAAC_DIR/venv"
-ISAAC_LAB_DIR="$ISAAC_DIR/IsaacLab"
+ISAAC_LAUNCHABLE_DIR="$ISAAC_DIR/isaac-launchable"
+ISAAC_LAB_COMPOSE_DIR="$ISAAC_LAUNCHABLE_DIR/isaac-lab"
 
-echo "Installing Isaac Sim + Lab in: $ISAAC_DIR"
+echo "Installing Isaac Lab (Docker) in: $ISAAC_DIR"
 echo ""
 
 # Create isaac directory
@@ -58,14 +59,42 @@ fi
 echo -e "${GREEN}✓${NC} NVIDIA GPU detected:"
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | head -1
 
-# Check disk space (need at least 150GB for full installation)
+# Check for Docker
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}✗ Error: Docker not found${NC}"
+    echo ""
+    echo "Please install Docker:"
+    echo "  curl -fsSL https://get.docker.com | sh"
+    echo "  sudo usermod -aG docker \$USER"
+    echo "  newgrp docker"
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} Docker installed: $(docker --version)"
+
+# Check for nvidia-container-toolkit
+if ! docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+    echo -e "${RED}✗ Error: NVIDIA Container Toolkit not properly configured${NC}"
+    echo ""
+    echo "Please install NVIDIA Container Toolkit:"
+    echo "  sudo apt-get update"
+    echo "  sudo apt-get install -y nvidia-container-toolkit"
+    echo "  sudo systemctl restart docker"
+    exit 1
+fi
+echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit configured"
+
+# Check disk space (need at least 50GB for Docker images)
 AVAILABLE_SPACE=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | sed 's/G//')
-if [ "$AVAILABLE_SPACE" -lt 150 ]; then
-    echo -e "${YELLOW}⚠${NC} Warning: Low disk space. Have ${AVAILABLE_SPACE}GB, recommend 150GB+"
-    read -p "Continue anyway? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+if [ "$AVAILABLE_SPACE" -lt 50 ]; then
+    echo -e "${YELLOW}⚠${NC} Warning: Low disk space. Have ${AVAILABLE_SPACE}GB, recommend 50GB+"
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo "Continuing anyway (non-interactive mode)..."
+    else
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
 else
     echo -e "${GREEN}✓${NC} Disk space: ${AVAILABLE_SPACE}GB available"
@@ -76,189 +105,139 @@ echo -e "${GREEN}All prerequisites satisfied!${NC}"
 echo ""
 
 # ============================================================================
-# Install uv
+# Clone isaac-launchable
 # ============================================================================
 
-echo "Checking uv..."
-if command -v uv &> /dev/null; then
-    UV_VERSION=$(uv --version)
-    echo -e "${GREEN}✓${NC} uv already installed: $UV_VERSION"
-else
-    echo "uv not found. Installing..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    # Add uv to PATH for current session
-    export PATH="$HOME/.local/bin:$PATH"
-    echo -e "${GREEN}✓${NC} uv installed"
-fi
+if [ -d "$ISAAC_LAUNCHABLE_DIR" ]; then
+    echo -e "${GREEN}✓${NC} isaac-launchable already exists at $ISAAC_LAUNCHABLE_DIR"
+    cd "$ISAAC_LAUNCHABLE_DIR"
 
-echo ""
+    # Check if it's a git repo and optionally pull updates
+    if [ -d ".git" ]; then
+        echo "Checking for updates..."
+        git fetch origin --quiet
+        LOCAL=$(git rev-parse HEAD)
+        REMOTE=$(git rev-parse origin/main 2>/dev/null || git rev-parse origin/master 2>/dev/null)
 
-# ============================================================================
-# Install Python 3.11
-# ============================================================================
-
-echo "Checking Python 3.11..."
-if command -v python3.11 &> /dev/null; then
-    PYTHON_VERSION=$(python3.11 --version)
-    echo -e "${GREEN}✓${NC} Python 3.11 already installed: $PYTHON_VERSION"
-else
-    echo "Python 3.11 not found. Installing..."
-    sudo apt-get update -qq
-    sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
-    echo -e "${GREEN}✓${NC} Python 3.11 installed"
-fi
-
-echo ""
-
-# ============================================================================
-# Create Virtual Environment with uv
-# ============================================================================
-if [ -d "$VENV_DIR" ]; then
-    echo -e "${YELLOW}⚠${NC} Virtual environment already exists at $VENV_DIR"
-    
-    # Check if Isaac Sim is already working in existing venv
-    echo "Checking if Isaac Sim is already installed..."
-    if source "$VENV_DIR/bin/activate" 2>/dev/null && python -c "import isaacsim; print('Isaac Sim version:', isaacsim.__version__)" 2>/dev/null; then
-        echo -e "${GREEN}✓${NC} Isaac Sim already working in existing venv"
-        echo "Skipping Isaac Sim installation..."
-        SKIP_ISAAC_SIM_INSTALL=true
-    else
-        echo -e "${RED}✗${NC} Existing venv is broken or Isaac Sim not installed"
-        echo "Removing and recreating venv..."
-        rm -rf "$VENV_DIR"
-        SKIP_ISAAC_SIM_INSTALL=false
+        if [ "$LOCAL" != "$REMOTE" ]; then
+            if [ "$NON_INTERACTIVE" = true ]; then
+                echo "Updates available - skipping (non-interactive mode)"
+            else
+                echo -e "${YELLOW}Updates available. Pull latest changes? (y/N)${NC}"
+                read -p "> " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    git pull
+                    echo -e "${GREEN}✓${NC} Updated to latest version"
+                fi
+            fi
+        else
+            echo -e "${GREEN}✓${NC} Already up to date"
+        fi
     fi
 else
-    SKIP_ISAAC_SIM_INSTALL=false
-fi
-
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating Python 3.11 virtual environment with uv at $VENV_DIR..."
-    uv venv "$VENV_DIR" --python 3.11
-    echo -e "${GREEN}✓${NC} Virtual environment created"
-    
-    # Activate virtual environment
-    source "$VENV_DIR/bin/activate"
-fi
-
-echo ""
-
-# ============================================================================
-# Install Isaac Sim via uv pip
-# ============================================================================
-
-# Always set EULA acceptance for any Isaac Sim imports
-export ISAACSIM_ACCEPT_EULA=1
-
-if [ "$SKIP_ISAAC_SIM_INSTALL" = "true" ]; then
-    echo "Isaac Sim already installed, skipping..."
-else
-    echo "Installing Isaac Sim 5.0.0 via uv pip..."
-    echo -e "${YELLOW}This will download several GB of dependencies (much faster with uv!)${NC}"
-    echo ""
-    
-    uv pip install isaacsim[all,extscache]==5.0.0.0 --extra-index-url https://pypi.nvidia.com
-    
-    echo ""
-    echo -e "${GREEN}✓${NC} Isaac Sim installed"
-    echo ""
-
-    export ISAACSIM_ACCEPT_EULA=1
-
-    # Verify Isaac Sim installation
-    echo "Verifying Isaac Sim installation..."
-    python -c 'import isaacsim; print("Isaac Sim version:", isaacsim.__version__)' || {
-        echo -e "${RED}✗ Error: Isaac Sim import failed${NC}"
-        exit 1
-    }
-    echo -e "${GREEN}✓${NC} Isaac Sim import successful"
-fi
-
-echo ""
-
-# ============================================================================
-# Clone Isaac Lab
-# ============================================================================
-echo "Installing Isaac Lab..."
-echo ""
-if [ -d "$ISAAC_LAB_DIR" ]; then
-    echo -e "${YELLOW}⚠${NC} Isaac Lab directory already exists at $ISAAC_LAB_DIR"
-    echo "Keeping existing installation. Skipping Isaac Lab clone."
-    cd "$ISAAC_LAB_DIR"
-fi
-if [ ! -d "$ISAAC_LAB_DIR" ]; then
+    echo "Cloning isaac-launchable repository..."
     cd "$ISAAC_DIR"
-    echo "Cloning Isaac Lab repository..."
-    git clone --depth 1 https://github.com/isaac-sim/IsaacLab.git
-    cd IsaacLab
-    echo -e "${GREEN}✓${NC} Isaac Lab cloned to $ISAAC_LAB_DIR"
-else
-    cd "$ISAAC_LAB_DIR"
+    git clone https://github.com/isaac-sim/isaac-launchable.git
+    echo -e "${GREEN}✓${NC} isaac-launchable cloned to $ISAAC_LAUNCHABLE_DIR"
 fi
-echo ""
-# ============================================================================
-# Run Isaac Lab Installation
-# ============================================================================
-echo "Checking Isaac Lab installation..."
 
-# Check if Isaac Lab is already installed
-source "$VENV_DIR/bin/activate"
-if uv pip list | grep -q "isaaclab"; then
-    echo -e "${GREEN}✓${NC} Isaac Lab already installed in venv, skipping..."
+echo ""
+
+# ============================================================================
+# Configure Docker Compose for localhost
+# ============================================================================
+
+echo "Configuring Docker Compose for localhost..."
+cd "$ISAAC_LAB_COMPOSE_DIR"
+
+# Update ENV=brev to ENV=localhost in docker-compose.yml
+if grep -q "ENV=brev" docker-compose.yml; then
+    sed -i 's/ENV=brev/ENV=localhost/' docker-compose.yml
+    echo -e "${GREEN}✓${NC} Updated docker-compose.yml for localhost"
 else
-    echo "Running Isaac Lab installation..."
-    
-    if [ "$MINIMAL_INSTALL" = "true" ]; then
-        echo "Installing minimal Isaac Lab (core only, no RL/ML extensions)..."
-        echo ""
-        echo -e "${YELLOW}This may take 3-5 minutes...${NC}"
-        echo ""
-        
-        # Install only the core Isaac Lab package
-        uv pip install -e source/isaaclab
-        # Install minimal additional dependencies needed by scan2wall scripts
-        uv pip install warp-lang opencv-python
-        
-        echo ""
-        echo -e "${GREEN}✓${NC} Minimal Isaac Lab installation complete"
+    echo -e "${GREEN}✓${NC} docker-compose.yml already configured for localhost"
+fi
+
+echo ""
+
+# ============================================================================
+# Start Docker Containers
+# ============================================================================
+
+echo "Starting Isaac Lab Docker containers..."
+echo -e "${YELLOW}This will download Docker images (~10-15GB) on first run${NC}"
+echo ""
+
+# Check if containers are already running
+if docker ps | grep -q "vscode"; then
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo "Containers already running - keeping existing containers"
     else
-        echo "This will:"
-        echo "  - Install Isaac Lab Python dependencies"
-        echo "  - Install PyTorch, Warp, and other tools"
-        echo "  - Sync Isaac Lab extensions (includes RL/ML frameworks)"
-        echo ""
-        echo -e "${YELLOW}This may take 20-25 minutes...${NC}"
-        echo ""
-        echo "Tip: For scan2wall, you only need minimal install:"
-        echo "  ./setup_isaac.sh --minimal"
-        echo ""
-        
-        # Run the full Isaac Lab installer
-        ./isaaclab.sh --install
+        echo -e "${YELLOW}Containers already running. Restart? (y/N)${NC}"
+        read -p "> " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "Stopping existing containers..."
+            docker compose down
+            echo "Starting fresh containers..."
+            docker compose up -d
+        else
+            echo "Keeping existing containers running"
+        fi
     fi
-    
-    echo ""
-    echo -e "${GREEN}✓${NC} Isaac Lab installation complete"
-fi
-echo ""
-
-# ============================================================================
-# Install ffmpeg (for video encoding)
-# ============================================================================
-
-echo "Installing ffmpeg..."
-if command -v ffmpeg &> /dev/null; then
-    echo -e "${GREEN}✓${NC} ffmpeg already installed: $(ffmpeg -version | head -1)"
 else
-    sudo apt-get update -qq
-    sudo apt-get install -y ffmpeg
-    echo -e "${GREEN}✓${NC} ffmpeg installed"
+    docker compose up -d
+fi
+
+echo ""
+echo -e "${GREEN}✓${NC} Docker containers started"
+echo ""
+
+# Wait for containers to be ready
+echo "Waiting for containers to be ready..."
+sleep 5
+
+# ============================================================================
+# Verify Containers
+# ============================================================================
+
+echo "Verifying containers..."
+echo ""
+
+REQUIRED_CONTAINERS=("vscode" "web-viewer")
+ALL_RUNNING=true
+
+for container in "${REQUIRED_CONTAINERS[@]}"; do
+    if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+        echo -e "${GREEN}✓${NC} Container running: $container"
+    else
+        echo -e "${RED}✗${NC} Container not running: $container"
+        ALL_RUNNING=false
+    fi
+done
+
+# Check for nginx container (has isaac-lab prefix)
+if docker ps --format '{{.Names}}' | grep -q "nginx"; then
+    echo -e "${GREEN}✓${NC} Container running: nginx (isaac-lab-nginx-1)"
+else
+    echo -e "${RED}✗${NC} Container not running: nginx"
+    ALL_RUNNING=false
+fi
+
+if [ "$ALL_RUNNING" = false ]; then
+    echo ""
+    echo -e "${RED}Some containers failed to start. Check logs:${NC}"
+    echo "  docker logs vscode"
+    echo "  docker logs web-viewer"
+    echo "  docker logs nginx"
+    exit 1
 fi
 
 echo ""
 
 # ============================================================================
-# Configure scan2wall paths
+# Configure scan2wall Environment
 # ============================================================================
 
 echo "Configuring scan2wall environment..."
@@ -271,24 +250,24 @@ else
     ENV_FILE=".env.example"
 fi
 
-# Update Isaac workspace path
+# Update Isaac workspace path (Docker container path)
 if grep -q "^ISAAC_WORKSPACE=" "$ENV_FILE"; then
-    sed -i "s|^ISAAC_WORKSPACE=.*|ISAAC_WORKSPACE=$ISAAC_LAB_DIR|" "$ENV_FILE"
+    sed -i "s|^ISAAC_WORKSPACE=.*|ISAAC_WORKSPACE=/workspace/isaaclab|" "$ENV_FILE"
 else
-    echo "ISAAC_WORKSPACE=$ISAAC_LAB_DIR" >> "$ENV_FILE"
+    echo "ISAAC_WORKSPACE=/workspace/isaaclab" >> "$ENV_FILE"
 fi
 
-# Update USD output directory
+# Update USD output directory (accessible from host)
 if grep -q "^USD_OUTPUT_DIR=" "$ENV_FILE"; then
-    sed -i "s|^USD_OUTPUT_DIR=.*|USD_OUTPUT_DIR=$ISAAC_LAB_DIR/usd_files|" "$ENV_FILE"
+    sed -i "s|^USD_OUTPUT_DIR=.*|USD_OUTPUT_DIR=$ISAAC_DIR/usd_files|" "$ENV_FILE"
 else
-    echo "USD_OUTPUT_DIR=$ISAAC_LAB_DIR/usd_files" >> "$ENV_FILE"
+    echo "USD_OUTPUT_DIR=$ISAAC_DIR/usd_files" >> "$ENV_FILE"
 fi
 
-# Create USD output directory
-mkdir -p "$ISAAC_LAB_DIR/usd_files"
+# Create USD output directory on host
+mkdir -p "$ISAAC_DIR/usd_files"
 
-echo -e "${GREEN}✓${NC} Paths configured in $ENV_FILE"
+echo -e "${GREEN}✓${NC} Environment configured in $ENV_FILE"
 echo ""
 
 # ============================================================================
@@ -298,20 +277,20 @@ echo ""
 echo "Verifying installation..."
 echo ""
 
-# Test Isaac Lab can be invoked
-if [ -f "$ISAAC_LAB_DIR/isaaclab.sh" ]; then
-    echo -e "${GREEN}✓${NC} Isaac Lab executable found"
+# Test if we can exec into the container
+if docker exec vscode bash -c "ls /workspace/isaaclab" &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Can access Isaac Lab in container"
 else
-    echo -e "${RED}✗${NC} Isaac Lab executable not found"
+    echo -e "${RED}✗${NC} Cannot access Isaac Lab in container"
+    echo "Check container logs: docker logs vscode"
     exit 1
 fi
 
-# Verify venv has Isaac Sim
-source "$VENV_DIR/bin/activate"
-if python -c "import isaacsim" 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} Isaac Sim accessible from venv"
+# Test if isaaclab.sh exists
+if docker exec vscode bash -c "test -f /workspace/isaaclab/isaaclab.sh" &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Isaac Lab executable found in container"
 else
-    echo -e "${RED}✗${NC} Isaac Sim not accessible from venv"
+    echo -e "${RED}✗${NC} Isaac Lab executable not found in container"
     exit 1
 fi
 
@@ -326,24 +305,41 @@ echo -e "${GREEN}Installation Complete!${NC}"
 echo "=========================================="
 echo ""
 echo "Installation summary:"
-echo "  • Python venv:  $VENV_DIR"
-echo "  • Isaac Sim:    Installed via pip (isaacsim==5.0.0.0)"
-echo "  • Isaac Lab:    $ISAAC_LAB_DIR"
-echo "  • USD files:    $ISAAC_LAB_DIR/usd_files"
+echo "  • Docker containers: Running"
+echo "    - vscode: Development environment"
+echo "    - web-viewer: Streaming UI"
+echo "    - nginx: Reverse proxy"
+echo "  • Isaac Sim: Pre-installed in container at /isaac-sim"
+echo "  • Isaac Lab: Pre-installed at /workspace/isaaclab"
+echo "  • Host mount: $ISAAC_DIR/usd_files"
+echo ""
+echo "Container management:"
+echo ""
+echo "  Start containers:"
+echo "    cd $ISAAC_LAB_COMPOSE_DIR"
+echo "    docker compose up -d"
+echo ""
+echo "  Stop containers:"
+echo "    docker compose down"
+echo ""
+echo "  Access Isaac Lab environment:"
+echo "    docker exec -it vscode bash"
+echo ""
+echo "  View logs:"
+echo "    docker logs vscode"
+echo "    docker logs web-viewer"
 echo ""
 echo "Next steps:"
 echo ""
-echo "1. Activate the virtual environment:"
-echo "   source $VENV_DIR/bin/activate"
+echo "1. Test Isaac Lab in container:"
+echo "   docker exec -it vscode bash"
+echo "   cd /workspace/isaaclab"
+echo "   ./isaaclab.sh --help"
 echo ""
-echo "2. Test Isaac Lab:"
-echo "   cd $ISAAC_LAB_DIR"
-echo "   ./isaaclab.sh -p"
-echo ""
-echo "3. Continue scan2wall setup:"
+echo "2. Continue scan2wall setup:"
 echo "   cd $PROJECT_ROOT"
-echo "   ./scripts/install/scan2wall.sh"
+echo "   ./scan2wall/scripts/install/scan2wall.sh"
 echo ""
-echo -e "${YELLOW}Note:${NC} Always activate the venv before running Isaac scripts:"
-echo "      source $VENV_DIR/bin/activate"
+echo -e "${YELLOW}Note:${NC} Isaac Lab now runs in Docker containers"
+echo "      Access via: docker exec -it vscode bash"
 echo ""

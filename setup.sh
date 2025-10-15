@@ -13,11 +13,11 @@ echo "=========================================="
 echo ""
 echo "This master script will install everything needed for scan2wall:"
 echo ""
-echo "  Phase 1: Isaac Sim + Isaac Lab"
-echo "    • Install Python 3.11"
-echo "    • Create virtual environment"
-echo "    • Install Isaac Sim via pip"
-echo "    • Clone and setup Isaac Lab"
+echo "  Phase 1: Isaac Sim + Isaac Lab (Docker)"
+echo "    • Check Docker prerequisites"
+echo "    • Clone isaac-launchable repository"
+echo "    • Start Isaac Lab Docker containers"
+echo "    • Verify container health"
 echo ""
 echo "  Phase 2: ComfyUI (3D Generation)"
 echo "    • Setup ComfyUI"
@@ -29,13 +29,9 @@ echo "    • Create required directories"
 echo "    • Configure environment"
 echo ""
 
-if [ "$MINIMAL_INSTALL_FLAG" = "--minimal" ]; then
-    echo "Estimated total time: 20-25 minutes (minimal)"
-else
-    echo "Estimated total time: 30-40 minutes (full)"
-fi
-
-echo "Required disk space: ~150GB"
+echo "Estimated total time: 25-35 minutes"
+echo "  (first time: ~15min for Docker image download)"
+echo "Required disk space: ~50GB (Docker images + models)"
 echo ""
 
 # Color codes
@@ -58,24 +54,24 @@ fi
 START_TIME=$(date +%s)
 
 # ============================================================================
-# Phase 1: Isaac Sim + Isaac Lab
+# Phase 1: Isaac Sim + Isaac Lab (Docker)
 # ============================================================================
 
 echo ""
 echo "=========================================="
-echo "Phase 1: Isaac Sim + Isaac Lab"
+echo "Phase 1: Isaac Sim + Isaac Lab (Docker)"
 echo "=========================================="
 echo ""
 
 if [ -f "./scan2wall/scripts/install/isaac.sh" ]; then
-    bash ./scan2wall/scripts/install/isaac.sh
+    bash ./scan2wall/scripts/install/isaac.sh $MINIMAL_INSTALL_FLAG
 else
     echo -e "${RED}✗ Error: scripts/install/isaac.sh not found${NC}"
     exit 1
 fi
 
 echo ""
-echo -e "${GREEN}✓ Phase 1 Complete${NC}"
+echo -e "${GREEN}✓ Phase 1 Complete - Docker containers running${NC}"
 echo ""
 
 # ============================================================================
@@ -151,9 +147,10 @@ echo ""
 echo "Total installation time: ${MINUTES}m ${SECONDS}s"
 echo ""
 echo "What was installed:"
-echo "  ✓ Python 3.11 virtual environment (/workspace/isaac_venv)"
-echo "  ✓ Isaac Sim 5.0.0 (pip installation)"
-echo "  ✓ Isaac Lab (/workspace/IsaacLab)"
+echo "  ✓ Docker containers (Isaac Sim + Isaac Lab)"
+echo "    - vscode container (development environment)"
+echo "    - web-viewer container (streaming UI)"
+echo "    - nginx container (reverse proxy)"
 echo "  ✓ ComfyUI with Hunyuan3D models"
 echo "  ✓ scan2wall Python package"
 echo ""
@@ -172,12 +169,12 @@ echo "    cd ComfyUI"
 echo "    python main.py --listen 0.0.0.0 --port 8188"
 echo ""
 echo "  Terminal 2 (Upload Server):"
-echo "    source /workspace/isaac_venv/bin/activate"
+echo "    source .venv/bin/activate"
 echo "    python 3d_gen/image_collection/run.py"
 echo ""
 echo "  Terminal 3 (Isaac Lab - for testing):"
-echo "    source /workspace/isaac_venv/bin/activate"
-echo "    cd /workspace/IsaacLab"
+echo "    docker exec -it vscode bash"
+echo "    cd /workspace/isaaclab"
 echo "    ./isaaclab.sh -p"
 echo ""
 echo "Access the web interface:"

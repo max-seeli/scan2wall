@@ -16,8 +16,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Paths
-VENV_DIR="/workspace/scan2wall/isaac/venv"
-ISAAC_LAB_DIR="/workspace/scan2wall/isaac/IsaacLab"
+ISAAC_DIR="$SCRIPT_DIR/isaac"
+ISAAC_LAUNCHABLE_DIR="$ISAAC_DIR/isaac-launchable"
+ISAAC_LAB_COMPOSE_DIR="$ISAAC_LAUNCHABLE_DIR/isaac-lab"
 
 echo "=========================================="
 echo "       scan2wall Startup"
@@ -79,30 +80,48 @@ fi
 
 echo -e "${GREEN}✓${NC} ComfyUI found"
 
-# Check if Isaac Lab is set up
-if [ ! -d "$ISAAC_LAB_DIR" ]; then
-    echo -e "${RED}✗ Isaac Lab not found at $ISAAC_LAB_DIR${NC}"
+# Check if Isaac Lab Docker setup exists
+if [ ! -d "$ISAAC_LAB_COMPOSE_DIR" ]; then
+    echo -e "${RED}✗ Isaac Lab Docker setup not found at $ISAAC_LAB_COMPOSE_DIR${NC}"
     echo ""
     echo "Please run setup first:"
-    echo "  ./setup_isaac.sh"
+    echo "  ./scan2wall/scripts/install/isaac.sh"
     echo ""
     echo "Or run complete setup:"
     echo "  ./setup.sh"
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Isaac Lab found"
+echo -e "${GREEN}✓${NC} Isaac Lab Docker setup found"
 
-# Check if isaac_venv exists
-if [ ! -d "$VENV_DIR" ]; then
-    echo -e "${RED}✗ isaac_venv not found at $VENV_DIR${NC}"
-    echo ""
-    echo "Please run setup first:"
-    echo "  ./setup_isaac.sh"
-    exit 1
+# Check if Docker containers are running
+REQUIRED_CONTAINERS=("vscode" "web-viewer")
+ALL_RUNNING=true
+
+for container in "${REQUIRED_CONTAINERS[@]}"; do
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+        echo -e "${YELLOW}⚠ Docker container not running: $container${NC}"
+        ALL_RUNNING=false
+    fi
+done
+
+# Check nginx (has isaac-lab prefix)
+if ! docker ps --format '{{.Names}}' | grep -q "nginx"; then
+    echo -e "${YELLOW}⚠ Docker container not running: nginx${NC}"
+    ALL_RUNNING=false
 fi
 
-echo -e "${GREEN}✓${NC} isaac_venv found"
+if [ "$ALL_RUNNING" = false ]; then
+    echo ""
+    echo "Starting Isaac Lab Docker containers..."
+    cd "$ISAAC_LAB_COMPOSE_DIR"
+    docker compose up -d
+    sleep 5
+    echo -e "${GREEN}✓${NC} Docker containers started"
+    cd "$SCRIPT_DIR"
+else
+    echo -e "${GREEN}✓${NC} Isaac Lab Docker containers running"
+fi
 
 # Check if ComfyUI venv exists
 if [ ! -d "3d_gen/.venv" ]; then
@@ -165,8 +184,10 @@ echo ""
 cleanup() {
     echo ""
     echo "Shutting down scan2wall..."
-    # Kill background processes
+    # Kill background processes (including Docker log capture)
     jobs -p | xargs -r kill 2>/dev/null || true
+    # Kill any docker logs -f processes
+    pkill -f "docker logs -f" 2>/dev/null || true
     exit 0
 }
 
@@ -189,9 +210,12 @@ if [ "$MODE" = "auto" ] || [ "$MODE" = "tmux" ]; then
         # Kill existing session if it exists
         tmux kill-session -t $SESSION 2>/dev/null || true
 
+        # Create logs directory
+        mkdir -p "$SCRIPT_DIR/logs"
+
         echo "Starting ComfyUI..."
-        # Create new session with ComfyUI
-        tmux new-session -d -s $SESSION -n "comfyui" "cd $SCRIPT_DIR/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188"
+        # Create new session with ComfyUI (with logging)
+        tmux new-session -d -s $SESSION -n "comfyui" "cd $SCRIPT_DIR/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188 2>&1 | tee $SCRIPT_DIR/logs/comfyui.log"
 
         # Wait for ComfyUI to be ready
         echo "Waiting for ComfyUI to start..."
@@ -214,11 +238,17 @@ if [ "$MODE" = "auto" ] || [ "$MODE" = "tmux" ]; then
         fi
 
         echo "Starting upload server..."
-        # Create new window for upload server (using isaac_venv)
-        tmux new-window -t $SESSION -n "upload" "cd $SCRIPT_DIR && source $VENV_DIR/bin/activate && python 3d_gen/image_collection/run.py"
+        # Create new window for upload server (with logging)
+        tmux new-window -t $SESSION -n "upload" "cd $SCRIPT_DIR && source .venv/bin/activate && python 3d_gen/image_collection/run.py 2>&1 | tee $SCRIPT_DIR/logs/upload.log"
 
         # Wait a moment for upload server to start
         sleep 3
+
+        # Start Docker log capture in background
+        echo "Starting Docker log capture..."
+        docker logs -f vscode >> "$SCRIPT_DIR/logs/isaac_vscode.log" 2>&1 &
+        docker logs -f web-viewer >> "$SCRIPT_DIR/logs/isaac_webviewer.log" 2>&1 &
+        docker logs -f isaac-lab-nginx-1 >> "$SCRIPT_DIR/logs/isaac_nginx.log" 2>&1 &
 
         # Create status window
         tmux new-window -t $SESSION -n "status" "cd $SCRIPT_DIR && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:49100\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:49100 > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; tail -f /dev/null'"
@@ -230,6 +260,13 @@ if [ "$MODE" = "auto" ] || [ "$MODE" = "tmux" ]; then
         echo "Services:"
         echo "  • ComfyUI:       http://localhost:8188"
         echo "  • Upload server: http://localhost:49100"
+        echo ""
+        echo "Logs saved to:"
+        echo "  • $SCRIPT_DIR/logs/comfyui.log"
+        echo "  • $SCRIPT_DIR/logs/upload.log"
+        echo "  • $SCRIPT_DIR/logs/isaac_vscode.log"
+        echo "  • $SCRIPT_DIR/logs/isaac_webviewer.log"
+        echo "  • $SCRIPT_DIR/logs/isaac_nginx.log"
         echo ""
         echo "Attaching to tmux session..."
         echo "Use Ctrl+B then number to switch windows"
@@ -256,9 +293,9 @@ if [ "$MODE" = "background" ]; then
     COMFYUI_PID=$!
     echo -e "${GREEN}✓${NC} ComfyUI started (PID: $COMFYUI_PID)"
 
-    # Start upload server (using scan2wall)
+    # Start upload server
     cd "$SCRIPT_DIR"
-    source "$VENV_DIR/bin/activate"
+    source .venv/bin/activate
     nohup python 3d_gen/image_collection/run.py > "$SCRIPT_DIR/logs/upload.log" 2>&1 &
     UPLOAD_PID=$!
     echo -e "${GREEN}✓${NC} Upload server started (PID: $UPLOAD_PID)"
@@ -280,6 +317,31 @@ if [ "$MODE" = "background" ]; then
     echo "$COMFYUI_PID" > "$SCRIPT_DIR/.comfyui.pid"
     echo "$UPLOAD_PID" > "$SCRIPT_DIR/.upload.pid"
 
+    exit 0
+fi
+
+# Manual mode - print instructions
+if [ "$MODE" = "manual" ]; then
+    echo "Starting scan2wall services..."
+    echo ""
+    echo "Please run the following commands in separate terminals:"
+    echo ""
+    echo -e "${BLUE}Terminal 1 - ComfyUI:${NC}"
+    echo "  cd $SCRIPT_DIR/3d_gen"
+    echo "  source .venv/bin/activate"
+    echo "  cd ComfyUI"
+    echo "  python main.py --listen 0.0.0.0 --port 8188"
+    echo ""
+    echo -e "${BLUE}Terminal 2 - Upload Server:${NC}"
+    echo "  cd $SCRIPT_DIR"
+    echo "  source .venv/bin/activate"
+    echo "  python 3d_gen/image_collection/run.py"
+    echo ""
+    echo -e "${BLUE}Isaac Lab (Docker):${NC}"
+    echo "  Already running in Docker containers"
+    echo "  Access with: docker exec -it vscode bash"
+    echo ""
+    echo -e "${GREEN}Tip:${NC} Use './start.sh auto' to start everything automatically with tmux"
     exit 0
 fi
 
