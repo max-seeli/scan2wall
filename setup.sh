@@ -130,6 +130,57 @@ echo -e "${GREEN}✓ Phase 3 Complete${NC}"
 echo ""
 
 # ============================================================================
+# API Key Configuration
+# ============================================================================
+
+echo ""
+echo "=========================================="
+echo "API Key Configuration"
+echo "=========================================="
+echo ""
+
+# Check if GOOGLE_API_KEY is set in .env
+if grep -q "^GOOGLE_API_KEY=.*[a-zA-Z0-9]" ".env" && ! grep -q "your_gemini_api_key_here" ".env"; then
+    echo -e "${GREEN}✓ GOOGLE_API_KEY already configured${NC}"
+else
+    echo "Gemini API key is required for material property inference."
+    echo ""
+    echo "Get your free API key from: https://aistudio.google.com/app/apikey"
+    echo ""
+
+    # Prompt for API key
+    while true; do
+        read -p "Enter your Gemini API key: " api_key
+
+        # Check if empty
+        if [ -z "$api_key" ]; then
+            echo -e "${RED}✗ API key cannot be empty${NC}"
+            echo ""
+            read -p "Skip API key configuration? You can add it later. (y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${YELLOW}⚠ Skipping API key configuration${NC}"
+                echo "You'll need to manually edit .env before running the application"
+                break
+            fi
+        else
+            # Write to .env
+            if grep -q "^GOOGLE_API_KEY=" ".env"; then
+                # Replace existing line
+                sed -i "s|^GOOGLE_API_KEY=.*|GOOGLE_API_KEY=$api_key|" ".env"
+            else
+                # Append new line
+                echo "GOOGLE_API_KEY=$api_key" >> ".env"
+            fi
+            echo -e "${GREEN}✓ API key configured successfully${NC}"
+            break
+        fi
+    done
+fi
+
+echo ""
+
+# ============================================================================
 # Final Summary
 # ============================================================================
 

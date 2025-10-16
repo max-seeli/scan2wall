@@ -82,6 +82,10 @@ echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/recordings"
 mkdir -p "$PROJECT_DIR/3d_gen/input"
 echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/3d_gen/input"
 
+# Logs directory (for application logs)
+mkdir -p "$PROJECT_DIR/logs"
+echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/logs"
+
 echo ""
 
 # ============================================================================
