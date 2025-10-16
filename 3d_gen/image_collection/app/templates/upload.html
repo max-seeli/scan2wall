@@ -165,14 +165,14 @@
         const data = await resp.json();
 
         if (data.status === 'queued') {
-          showStatus('<div class="spinner"></div>Queued for processing...', 'info');
+          showStatus('<div class="spinner"></div>' + (data.status_detail || 'Queued for processing...'), 'info');
         } else if (data.status === 'processing') {
-          showStatus('<div class="spinner"></div>Generating 3D mesh and running simulation...', 'info');
+          showStatus('<div class="spinner"></div>' + (data.status_detail || 'Processing...'), 'info');
         } else if (data.status === 'done') {
-          showStatus('✅ Complete! Your simulation has been generated.', 'success');
+          showStatus('✅ ' + (data.status_detail || 'Complete! Your simulation has been generated.'), 'success');
           return true; // done
         } else if (data.status === 'error') {
-          showStatus('❌ Processing failed: ' + (data.error || 'Unknown error'), 'error');
+          showStatus('❌ ' + (data.status_detail || data.error || 'Unknown error'), 'error');
           return true; // done (with error)
         }
 

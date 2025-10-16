@@ -37,9 +37,10 @@ python main.py --listen 0.0.0.0 --port 8188
 python 3d_gen/image_collection/run.py  # Runs on port 49100
 ```
 
-**Terminal 3 - Isaac Lab (for running scripts):**
+**Terminal 3 - Isaac Lab (Docker-based, for manual testing):**
 ```bash
-cd /workspace/isaac
+docker exec -it vscode bash
+cd /workspace/isaaclab
 ./isaaclab.sh -p
 ```
 
@@ -80,20 +81,37 @@ cd 3d_gen
 bash modeldownload.sh
 ```
 
-### Isaac Sim Commands
+### Isaac Sim Commands (Docker-based)
 
 **Run mesh conversion manually:**
 ```bash
-python isaac_scripts/convert_mesh.py <input.glb> <output.usd> \
+docker exec vscode bash -c "cd /workspace/isaaclab && ./isaaclab.sh -p \
+  /workspace/scan2wall/scan2wall/isaac_scripts/convert_mesh.py \
+  /workspace/scan2wall/path/to/input.glb /workspace/usd_files/output.usd \
   --mass 0.5 --static-friction 0.6 --dynamic-friction 0.5 \
-  --collision-approximation convexHull --kit_args='--headless'
+  --collision-approximation convexHull --kit_args='--headless'"
 ```
 
 **Run simulation manually:**
 ```bash
-python isaac_scripts/test_place_obj_video.py \
-  --video --usd_path_abs /path/to/object.usd \
-  --scaling_factor 1.0 --kit_args='--no-window'
+docker exec vscode bash -c "cd /workspace/isaaclab && ./isaaclab.sh -p \
+  /workspace/scan2wall/scan2wall/isaac_scripts/test_place_obj_video.py \
+  --video --usd_path_abs /workspace/usd_files/object.usd \
+  --scaling_factor 1.0 --kit_args='--no-window'"
+```
+
+**Check Docker containers:**
+```bash
+docker ps  # List running containers (should see vscode, web-viewer, nginx)
+docker logs vscode  # View Isaac Lab logs
+docker logs web-viewer  # View streaming viewer logs
+```
+
+**Restart Docker containers:**
+```bash
+cd isaac/isaac-launchable/isaac-lab
+docker compose down
+docker compose up -d
 ```
 
 ## Architecture
@@ -173,14 +191,26 @@ The project uses a centralized path management system (`3d_gen/utils/paths.py`):
 
 All paths support environment variable overrides via `.env` file.
 
-### Single-Machine Setup (Default)
+### Single-Machine Setup (Default - Docker-based)
 
 **All components run on one machine:**
 - ComfyUI on port 8188 (3D generation)
 - Upload server on port 49100 (web interface)
-- Isaac Lab at `/workspace/isaac` (physics simulation)
+- Isaac Lab runs in Docker containers (physics simulation)
+  - **vscode** container: Isaac Lab environment with Isaac Sim
+  - **web-viewer** container: Streaming interface for visualizations
+  - **nginx** container: Reverse proxy for web services
 - GPU: 16GB+ VRAM recommended
 - Managed by `./start.sh` script
+
+**Docker Architecture:**
+- Isaac Lab cloned to: `isaac/isaac-launchable/`
+- Docker Compose file: `isaac/isaac-launchable/isaac-lab/docker-compose.yml`
+- Container mounts:
+  - Host `/home/ubuntu/scan2wall` → Container `/workspace/scan2wall`
+  - Host `/home/ubuntu/scan2wall/isaac/usd_files` → Container `/workspace/usd_files`
+  - Host `/home/ubuntu/scan2wall/recordings` → Container `/workspace/recordings`
+- Isaac Lab inside container at: `/workspace/isaaclab`
 
 ## Important Technical Details
 
@@ -220,9 +250,14 @@ Upload server performs two-stage validation:
 - `COMFY_URL`: ComfyUI API URL (default: http://127.0.0.1:8188)
 - `COMFY_INPUT_DIR`: Where ComfyUI reads images (default: auto-detected)
 - `COMFY_OUTPUT_DIR`: Where ComfyUI writes GLB files (default: auto-detected)
-- `ISAAC_WORKSPACE`: Isaac Lab installation directory (default: /workspace/isaac)
-- `USD_OUTPUT_DIR`: Where USD files are saved (default: /workspace/isaac/usd_files)
+- `ISAAC_WORKSPACE`: Isaac Lab path **inside Docker container** (default: /workspace/isaaclab)
+- `USD_OUTPUT_DIR`: Where USD files are saved on host (default: /home/ubuntu/scan2wall/isaac/usd_files)
 - All other path variables (see "Path Configuration" section above)
+
+**Important for Docker setup:**
+- `ISAAC_WORKSPACE` refers to the container path (`/workspace/isaaclab`)
+- Host paths get converted to container paths in `ml_pipeline.py` (e.g., `/home/ubuntu/scan2wall` → `/workspace/scan2wall`)
+- The ML pipeline uses `docker exec vscode` to run Isaac scripts inside containers
 
 See `.env.example` for complete configuration template.
 
@@ -255,6 +290,25 @@ pip install fastapi uvicorn python-multipart python-dotenv pillow requests googl
 
 **Job stuck in processing:** Check ComfyUI logs, verify API server is running
 
+**Docker containers not running:**
+```bash
+cd isaac/isaac-launchable/isaac-lab
+docker compose ps  # Check container status
+docker compose up -d  # Start containers
+docker compose logs vscode  # View logs
+```
+
+**Docker exec fails:**
+- Ensure `vscode` container is running: `docker ps | grep vscode`
+- Check container logs: `docker logs vscode`
+- Restart containers if needed: `cd isaac/isaac-launchable/isaac-lab && docker compose restart`
+
+**Path errors in Docker:**
+- Host paths: `/home/ubuntu/scan2wall/...`
+- Container paths: `/workspace/scan2wall/...`
+- The ML pipeline automatically converts host → container paths
+- Isaac Lab inside container: `/workspace/isaaclab`
+
 ## Development Tips
 
 - First 3D generation takes ~60s (model loading), subsequent ones ~30s (cached)
@@ -264,7 +318,8 @@ pip install fastapi uvicorn python-multipart python-dotenv pillow requests googl
 - Videos saved to `recordings/` directory in project root
 - Frame sequences temporarily saved to `recordings/frames/` then deleted after encoding
 - Simulation skips first 10 frames to avoid warmup artifacts
-- Subprocess calls use `/bin/bash -lic` to ensure environment is loaded
+- Isaac scripts execute inside Docker via `docker exec vscode bash -c`
+- Path conversion happens automatically in ML pipeline (host paths → container paths)
 
 ## Project Structure Note
 

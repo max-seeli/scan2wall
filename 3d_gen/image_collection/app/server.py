@@ -69,6 +69,7 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
         "filename": fname,
         "path": str(dest),
         "status": "queued",
+        "status_detail": "Waiting in queue...",
         "created_at": time.time(),
         "processed_path": None,
         "error": None,
@@ -90,6 +91,7 @@ async def get_job_status(job_id: str):
     return JSONResponse({
         "job_id": job["id"],
         "status": job["status"],
+        "status_detail": job.get("status_detail", "Processing..."),
         "filename": job["filename"],
         "created_at": job["created_at"],
         "processed_path": job.get("processed_path"),
@@ -103,11 +105,14 @@ async def list_jobs():
 
 def _run_pipeline(job_id: str, path: str) -> None:
     JOBS[job_id]["status"] = "processing"
+    JOBS[job_id]["status_detail"] = "Starting pipeline..."
     try:
-        out_path = process_image(job_id, path)
+        out_path = process_image(job_id, path, JOBS)
         JOBS[job_id]["status"] = "done"
+        JOBS[job_id]["status_detail"] = "Complete! Simulation video generated."
         JOBS[job_id]["processed_path"] = out_path
     except Exception as e:
         JOBS[job_id]["status"] = "error"
+        JOBS[job_id]["status_detail"] = f"Error: {str(e)}"
         JOBS[job_id]["error"] = repr(e)
         print(f"[ERROR] Job {job_id} failed: {e}")
