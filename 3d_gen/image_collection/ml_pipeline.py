@@ -318,7 +318,11 @@ def make_throwing_anim(file: str, scaling: float = 1.0):
         f"docker exec vscode bash -c '"
         f"cd /workspace/isaaclab && "
         f"./isaaclab.sh -p {container_sim_script} "
-        f"--video --out_dir /workspace/recordings --usd_path_abs \"{container_usd_path}\" --scaling_factor {scaling} --kit_args=\"--no-window\""
+        f"--video "
+        f"--out_dir /workspace/recordings "
+        f"--usd_path_abs \"{container_usd_path}\" "
+        f"--scaling_factor {scaling} "
+        f"--kit_args=\"--no-window --no-rendering\""
         f"'"
     )
 
