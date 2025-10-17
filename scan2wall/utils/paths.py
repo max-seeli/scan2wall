@@ -108,10 +108,7 @@ def get_usd_output_dir() -> Path:
     Returns:
         Path to USD output directory
     """
-    env_usd_dir = os.getenv("USD_OUTPUT_DIR")
-    if env_usd_dir:
-        return Path(env_usd_dir).resolve()
-    return get_isaac_workspace()
+    return Path("/home/ubuntu/workspace/scan2wall/data/usd_files")
 
 
 def validate_paths(check_writable: bool = False) -> dict:

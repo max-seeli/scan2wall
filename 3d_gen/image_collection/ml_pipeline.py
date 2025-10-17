@@ -98,7 +98,7 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     status = StatusUpdater(jobs_dict, job_id)
 
     p = Path(image_path)
-    out_dir = p.parent.parent / "processed"
+    out_dir = p.parent.parent / "reconstructed_geoms"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate 3D mesh via ComfyUI API
@@ -122,6 +122,15 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
         status.start("🧠 Inferring physical properties with Gemini AI...")
         print("\nInferring material properties with Gemini...")
         props = get_object_properties(image_path)
+        
+        out_dir = p.parent.parent / "material_props"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        props_file = out_dir / f"{p.stem}_properties.json"
+        with open(props_file, 'w') as f:
+            json.dump(props, f, indent=2)
+        
+        print(f"✓ Saved properties to {props_file}")
+
         print(f"✓ Material properties: {props}")
         mass = props["weight_kg"]["value"]
         df = props["friction_coefficients"]["dynamic"]
@@ -259,7 +268,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
                                         glb_path = comfy_output_dir / glb_filename
                                         if glb_path.exists():
                                             # Move to processed directory
-                                            processed_dir = Path(image_path).parent.parent / "processed"
+                                            processed_dir = Path(image_path).parent.parent / "reconstructed_geoms"
                                             processed_dir.mkdir(parents=True, exist_ok=True)
                                             final_path = processed_dir / f"{job_id}.glb"
                                             shutil.copy2(glb_path, final_path)
@@ -279,7 +288,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
 
                     if glb_files:
                         glb_path = glb_files[0]
-                        processed_dir = Path(image_path).parent.parent / "processed"
+                        processed_dir = Path(image_path).parent.parent / "reconstructed_geoms"
                         processed_dir.mkdir(parents=True, exist_ok=True)
                         final_path = processed_dir / f"{job_id}.glb"
                         shutil.copy2(glb_path, final_path)
@@ -296,150 +305,84 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
 
 def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str:
     """
-    Convert GLB mesh to USD format with physics properties.
-
-    Args:
-        out_file: Path to input GLB file
-        fname: Output filename
-        mass: Mass in kg
-        df: Dynamic friction coefficient
-        ds: Static friction coefficient
-
-    Returns:
-        Path to generated USD file
+    Convert GLB mesh to USD format via the persistent Isaac worker API.
     """
     fname_new = fname.replace(".glb", ".usd")
-    print(f"Converting {fname} to {fname_new}...")
+    print(f"Converting {fname} → {fname_new} via Isaac worker...")
 
-    # Build command arguments
-    m = f"--mass {mass}" if mass else ""
-    ds_arg = f"--static-friction {ds}" if ds else ""
-    df_arg = f"--dynamic-friction {df}" if df else ""
+    usd_dir = out_file.parent.parent / "usd_files"
+    usd_dir.mkdir(parents=True, exist_ok=True)
+    usd_path = usd_dir / fname_new
 
-    # Get paths from configuration
-    isaac_scripts = get_isaac_scripts_dir()
-    usd_output = get_usd_output_dir()
-    convert_script = isaac_scripts / "convert_mesh.py"
-    output_path = usd_output / fname_new
-
-    # Ensure output directory exists
-    usd_output.mkdir(parents=True, exist_ok=True)
-
-    # Convert host paths to container paths
-    # Host: /home/ubuntu/scan2wall/... → Container: /workspace/scan2wall/...
-    container_glb_path = str(out_file).replace("/home/ubuntu/scan2wall", "/workspace/scan2wall")
-    container_output_path = str(output_path).replace("/home/ubuntu/scan2wall", "/workspace")
-    container_convert_script = "/workspace/scan2wall/scan2wall/isaac_scripts/convert_mesh.py"
-
-    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment (in Docker)
-    cmd = (
-        f"docker exec vscode bash -c '"
-        f"cd /workspace/isaaclab && "
-        f"./isaaclab.sh -p {container_convert_script} "
-        f"{container_glb_path} {container_output_path} "
-        f"--kit_args=\"--headless\" {m} {df_arg} {ds_arg}"
-        f"'"
+    container_glb_path = str(out_file).replace(
+        "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
+    )
+    container_usd_path = str(usd_path).replace(
+        "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
     )
 
-    print(f"Running command: {cmd}")
+    payload = {
+        "glb_path": container_glb_path,
+        "usd_path": container_usd_path,
+        "mass": mass,
+        "static_friction": ds,
+        "dynamic_friction": df,
+    }
 
-    # Spawn conversion process (don't capture output to avoid pipe deadlock)
-    # Isaac Sim produces massive amounts of output that can fill the pipe buffer
-    proc = subprocess.Popen(
-        ["/bin/bash", "-c", cmd],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    # Send the conversion request to the persistent worker
+    try:
+        r = requests.post("http://localhost:8090/convert", json=payload, timeout=600)
+        r.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"Mesh conversion failed: {e}")
 
-    # Wait for completion
-    proc.wait()
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"Mesh conversion failed with return code {proc.returncode}")
-
-    # Verify USD file was created
-    if not output_path.exists():
-        raise RuntimeError(f"USD file was not created: {output_path}")
-
-    print("Mesh conversion complete!")
-    return str(output_path)
+    print("✅ Mesh conversion complete.")
+    return str(usd_path)
 
 
-def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, status_updater: StatusUpdater = None):
+def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, status_updater=None):
     """
-    Trigger Isaac Sim throwing animation simulation and wait for completion.
-
-    Args:
-        file: Path to USD file
-        scaling: Scaling factor for the object
-        job_id: Job ID for video filename
-        status_updater: StatusUpdater instance for progress updates
-
-    Returns:
-        Path to generated video file
+    Trigger Isaac worker to run the throwing simulation and generate a video.
     """
-    print("Creating throwing animation simulation...")
+    print("🎬 Creating throwing animation via Isaac worker...")
 
-    # Generate video filename with job ID and timestamp
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     video_name = f"sim_{job_id}_{timestamp}.mp4" if job_id else "sim_run.mp4"
 
-    # Convert host paths to container paths
     container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
-    container_sim_script = "/workspace/scan2wall/scan2wall/isaac_scripts/test_place_obj_video.py"
+    out_dir = "/workspace/s2w-data/recordings"
 
-    # Use isaaclab.sh wrapper to properly initialize Isaac Sim environment (in Docker)
-    cmd = (
-        f"docker exec vscode bash -c '"
-        f"cd /workspace/isaaclab && "
-        f"./isaaclab.sh -p {container_sim_script} "
-        f"--video "
-        f"--video_name {video_name} "
-        f"--out_dir /workspace/recordings "
-        f"--usd_path_abs \"{container_usd_path}\" "
-        f"--scaling_factor {scaling} "
-        f"--kit_args=\"--no-window --no-rendering\""
-        f"'"
-    )
+    payload = {
+        "usd_path": container_usd_path,
+        "out_dir": out_dir,
+        "video": True,
+        "video_length": 200,
+        "fps": 50,
+        "scaling_factor": scaling,
+    }
 
-    print(f"Running command: {cmd}")
+    try:
+        r = requests.post("http://localhost:8090/run_simulation", json=payload, timeout=1800)
+        r.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"Simulation failed: {e}")
 
-    # Spawn simulation in background
-    subprocess.Popen(
-        ["/bin/bash", "-c", cmd],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    print("Simulation triggered in background!")
+    # Wait for video to appear on host
+    host_recordings = Path("/home/ubuntu/scan2wall/data/recordings")
+    video_path = host_recordings / video_name
 
-    # Wait for video file to appear
-    recordings_dir = Path("/home/ubuntu/scan2wall/recordings")
-    video_pattern = f"sim_{job_id}_*.mp4" if job_id else "sim_run.mp4"
-    max_wait = 300  # 5 minutes max
-    poll_interval = 2  # Check every 2 seconds
+    max_wait, poll = 600, 2
+    print(f"⏳ Waiting for video {video_path} ...")
+    start = time.time()
 
-    print(f"Waiting for video file: {video_pattern}")
-    start_time = time.time()
+    while time.time() - start < max_wait:
+        if video_path.exists() and video_path.stat().st_size > 0:
+            time.sleep(2)
+            print(f"✅ Video file ready: {video_path}")
+            return str(video_path)
+        time.sleep(poll)
 
-    while time.time() - start_time < max_wait:
-        # Look for the video file
-        video_files = list(recordings_dir.glob(video_pattern))
-        if video_files:
-            video_path = video_files[0]
-            # Check that file is not empty and not being written to
-            if video_path.stat().st_size > 0:
-                # Wait a bit more to ensure file write is complete
-                time.sleep(2)
-                print(f"✓ Video file found: {video_path}")
-                return str(video_path)
-
-        time.sleep(poll_interval)
-
-    # Timeout
-    raise TimeoutError(f"Video file did not appear within {max_wait} seconds")
-
+    raise TimeoutError("Video did not appear within timeout window.")
 
 if __name__ == "__main__":
     # Test/debug code

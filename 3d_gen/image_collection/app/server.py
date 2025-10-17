@@ -13,8 +13,8 @@ import imghdr
 from fastapi import HTTPException
 from ml_pipeline import process_image
 
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
-PROCESSED_DIR = Path(__file__).resolve().parent.parent / "processed"
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"/ "uploaded_pictures"
+PROCESSED_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "reconstructed_geoms"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
