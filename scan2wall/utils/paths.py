@@ -88,7 +88,7 @@ def get_recordings_dir() -> Path:
     """
     Get recordings output directory.
 
-    Uses RECORDINGS_DIR env var if set, otherwise uses PROJECT_ROOT/recordings
+    Uses RECORDINGS_DIR env var if set, otherwise uses PROJECT_ROOT/data/recordings
 
     Returns:
         Path to recordings directory
@@ -96,7 +96,7 @@ def get_recordings_dir() -> Path:
     env_recordings = os.getenv("RECORDINGS_DIR")
     if env_recordings:
         return Path(env_recordings).resolve()
-    return get_project_root() / "recordings"
+    return get_project_root() / "data" / "recordings"
 
 
 def get_usd_output_dir() -> Path:

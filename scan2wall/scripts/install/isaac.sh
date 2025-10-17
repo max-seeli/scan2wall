@@ -167,6 +167,10 @@ echo ""
 
 echo "Configuring Docker container logging and volume mounts..."
 
+# Create data directory for Docker mount (prevents Docker from creating it as root)
+mkdir -p "$PROJECT_ROOT/data"
+echo -e "${GREEN}✓${NC} Created data directory for Docker volume mount"
+
 # Check if docker-compose.override.yml is already properly configured
 if [ -f "$ISAAC_LAB_COMPOSE_DIR/docker-compose.override.yml" ] && \
    grep -q "logging:" "$ISAAC_LAB_COMPOSE_DIR/docker-compose.override.yml" && \

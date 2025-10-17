@@ -75,16 +75,16 @@ mkdir -p "$ISAAC_DIR/usd_files"
 echo -e "${GREEN}✓${NC} Created: $ISAAC_DIR/usd_files"
 
 # Recordings directory (for simulation videos)
-mkdir -p "$PROJECT_DIR/recordings"
-echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/recordings"
+mkdir -p "$PROJECT_DIR/data/recordings"
+echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/data/recordings"
 
 # ComfyUI input directory
 mkdir -p "$PROJECT_DIR/3d_gen/input"
 echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/3d_gen/input"
 
 # Logs directory (for application logs)
-mkdir -p "$PROJECT_DIR/logs"
-echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/logs"
+mkdir -p "$PROJECT_DIR/data/logs"
+echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/data/logs"
 
 echo ""
 
