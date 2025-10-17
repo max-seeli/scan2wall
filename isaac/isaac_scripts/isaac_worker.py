@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+import sys
+
+# Force all output to stderr (unbuffered)
+sys.stdout = sys.stderr
+
+#!/usr/bin/env python3
 """
 Persistent Isaac Lab worker - Kit main loop with HTTP server
 """
@@ -401,7 +407,12 @@ while app_interface.is_running():
                     ffmpeg_encode(frames_dir, out_mp4, fps, skip_first)
                     shutil.rmtree(frames_dir, ignore_errors=True)
                 
-                job_results[job_id] = {"status": "completed", "frames": captured, "output": out_dir}
+                job_results[job_id] = {
+                    "status": "completed",
+                    "frames": captured,
+                    "output": out_dir,
+                    "video_path": out_mp4
+                }
                 print(f"✅ Simulation {job_id} done ({captured} frames)")
             except Exception as e:
                 import traceback

@@ -129,17 +129,30 @@ fi
 echo ""
 echo "Starting persistent Isaac worker (FastAPI)..."
 
-# Ensure port 8080 is free (optional safety)
-if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠ Port 8080 already in use (worker)${NC}"
-else
-    docker exec -d vscode bash -c \
-    "cd /workspace/s2w-scripts && nohup /workspace/isaaclab/isaaclab.sh -p /workspace/s2w-scripts/isaac_worker.py -- --no-window > /workspace/s2w-data/logs/isaac_worker.log 2>&1 &"
-  echo -e "${GREEN}✓${NC} Isaac worker started at http://localhost:8080"
+# Kill any existing Isaac workers first
+echo "Checking for existing Isaac workers..."
+if docker exec vscode pgrep -f isaac_worker.py > /dev/null 2>&1; then
+    echo "Killing existing Isaac worker..."
+    docker exec vscode pkill -9 -f isaac_worker.py
+    sleep 3
 fi
+
+# Now start fresh
+docker exec -d vscode bash -c \
+"cd /workspace/s2w-scripts && nohup /workspace/isaaclab/isaaclab.sh -p isaac_worker.py > /workspace/s2w-data/logs/isaac_worker.log 2>&1 &"
 
 # Give it a few seconds to initialize
 sleep 5
+
+# Ensure ffmpeg is installed
+echo "Checking for ffmpeg in Isaac container..."
+if ! docker exec vscode which ffmpeg > /dev/null 2>&1; then
+    echo "Installing ffmpeg..."
+    docker exec vscode bash -c "apt-get update -qq && apt-get install -y ffmpeg"
+    echo -e "${GREEN}✓${NC} ffmpeg installed"
+else
+    echo -e "${GREEN}✓${NC} ffmpeg already installed"
+fi
 
 # ------------------------------------------------------------------------------
 # ComfyUI

@@ -312,18 +312,17 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
 
     usd_dir = out_file.parent.parent / "usd_files"
     usd_dir.mkdir(parents=True, exist_ok=True)
-    usd_path = usd_dir / fname_new
 
     container_glb_path = str(out_file).replace(
         "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
     )
-    container_usd_path = str(usd_path).replace(
+    container_usd_dir = str(usd_dir).replace(
         "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
     )
 
     payload = {
-        "glb_path": container_glb_path,
-        "usd_path": container_usd_path,
+        "asset_path": container_glb_path,
+        "usd_dir": container_usd_dir,
         "mass": mass,
         "static_friction": ds,
         "dynamic_friction": df,
@@ -337,7 +336,7 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
         raise RuntimeError(f"Mesh conversion failed: {e}")
 
     print("✅ Mesh conversion complete.")
-    return str(usd_path)
+    return container_usd_dir + '/' + fname_new
 
 
 def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, status_updater=None):
@@ -345,13 +344,10 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
     Trigger Isaac worker to run the throwing simulation and generate a video.
     """
     print("🎬 Creating throwing animation via Isaac worker...")
-
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    video_name = f"sim_{job_id}_{timestamp}.mp4" if job_id else "sim_run.mp4"
-
+    
     container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
     out_dir = "/workspace/s2w-data/recordings"
-
+    
     payload = {
         "usd_path": container_usd_path,
         "out_dir": out_dir,
@@ -360,29 +356,20 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
         "fps": 50,
         "scaling_factor": scaling,
     }
-
+    
     try:
         r = requests.post("http://localhost:8090/run_simulation", json=payload, timeout=1800)
         r.raise_for_status()
+        result = r.json()
+        
+        # Get container path and convert to host path
+        container_video = result.get("video_path", f"{out_dir}/sim_run.mp4")
+        host_video = container_video.replace("/workspace/s2w-data", "/home/ubuntu/scan2wall/data")
+        
+        print(f"✅ Video ready: {host_video}")
+        return host_video
     except Exception as e:
         raise RuntimeError(f"Simulation failed: {e}")
-
-    # Wait for video to appear on host
-    host_recordings = Path("/home/ubuntu/scan2wall/data/recordings")
-    video_path = host_recordings / video_name
-
-    max_wait, poll = 600, 2
-    print(f"⏳ Waiting for video {video_path} ...")
-    start = time.time()
-
-    while time.time() - start < max_wait:
-        if video_path.exists() and video_path.stat().st_size > 0:
-            time.sleep(2)
-            print(f"✅ Video file ready: {video_path}")
-            return str(video_path)
-        time.sleep(poll)
-
-    raise TimeoutError("Video did not appear within timeout window.")
 
 if __name__ == "__main__":
     # Test/debug code
