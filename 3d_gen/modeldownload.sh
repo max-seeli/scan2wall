@@ -39,6 +39,11 @@ comfy --here model download \
   --relative-path models/vae \
   --filename Hunyuan3D-vae-v2-1-fp16.ckpt
 
+comfy --here model download \
+  --url "https://huggingface.co/lokCX/4x-Ultrasharp/blob/main/4x-UltraSharp.pth" \
+  --relative-path models/upscale_models \
+  --filename 4x-UltraSharp.pth
+
 echo ""
 echo "✅ Model download complete!"
 echo "Models installed to:"

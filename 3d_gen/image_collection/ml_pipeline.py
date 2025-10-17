@@ -193,7 +193,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     comfy_url = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
     comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "input"))
     comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "output"))
-    workflow_path = Path(__file__).parent.parent / "workflows" / "api_prompt_strcnst.json"
+    workflow_path = Path(__file__).parent.parent / "workflows" / "image-to-texture-mesh.json"
 
     # Ensure directories exist
     comfy_input_dir.mkdir(parents=True, exist_ok=True)

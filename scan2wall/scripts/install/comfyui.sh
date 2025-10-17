@@ -69,6 +69,7 @@ CUSTOM_NODES=(
     "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
     "https://github.com/huagetai/ComfyUI_LightGradient"
+    "https://github.com/PozzettiAndrea/ComfyUI-MeshCraft"
 )
 
 for repo in "${CUSTOM_NODES[@]}"; do
@@ -152,6 +153,7 @@ echo "📦 Installing final dependencies..."
 uv pip install transformers==4.46.3
 uv pip install pynanoinstantmeshes
 uv pip install hf_transfer
+uv pip install diso --no-build-isolation
 uv pip install fastapi python-multipart uvicorn
 echo ""
 echo "✅ ComfyUI setup complete!"
