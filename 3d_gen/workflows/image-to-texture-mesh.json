@@ -578,7 +578,7 @@
         "Node name for S&R": "UpscaleModelLoader"
       },
       "widgets_values": [
-        "4x-UltraSharp.pth"
+        "4x-UltraSharpV2.safetensors"
       ]
     },
     {

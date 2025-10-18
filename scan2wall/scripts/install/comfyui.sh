@@ -65,7 +65,6 @@ cd ../
 CUSTOM_NODES=(
     "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes"
     "https://github.com/kijai/ComfyUI-KJNodes"
-    "https://github.com/visualbruno/ComfyUI-Hunyuan3d-2-1"
     "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
     "https://github.com/huagetai/ComfyUI_LightGradient"
@@ -85,10 +84,10 @@ done
 echo ""
 echo "📦 Installing custom node dependencies..."
 
-# Hunyuan3D dependencies
-if [ -f "ComfyUI-Hunyuan3d-2-1/requirements.txt" ]; then
-    echo "Installing ComfyUI-Hunyuan3d-2-1 requirements..."
-    uv pip install -r ComfyUI-Hunyuan3d-2-1/requirements.txt
+# MeshCraft dependencies
+if [ -f "ComfyUI-MeshCraft/requirements.txt" ]; then
+    echo "Installing ComfyUI-MeshCraft requirements..."
+    uv pip install -r ComfyUI-MeshCraft/requirements.txt
 fi
 
 # Inspyrenet-Rembg dependencies
@@ -108,16 +107,16 @@ fi
 
 echo ""
 echo "🔧 Building custom rasterizer extensions..."
-# Build Hunyuan3D custom rasterizer
-if [ -d "ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer" ]; then
-    cd ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer/
+# Build MeshCraft custom rasterizer
+if [ -d "ComfyUI-MeshCraft/hy3dpaint/custom_rasterizer" ]; then
+    cd ComfyUI-MeshCraft/hy3dpaint/custom_rasterizer/
     python -m setup install
     cd ../../..
 fi
 
-# Build DifferentiableRenderer
-if [ -d "ComfyUI-Hunyuan3d-2-1/hy3dpaint/DifferentiableRenderer" ]; then
-    cd ComfyUI-Hunyuan3d-2-1/hy3dpaint/DifferentiableRenderer/
+# Build MeshCraft DifferentiableRenderer
+if [ -d "ComfyUI-MeshCraft/hy3dpaint/DifferentiableRenderer" ]; then
+    cd ComfyUI-MeshCraft/hy3dpaint/DifferentiableRenderer/
     python -m setup install
     cd ../../..
 fi
@@ -126,27 +125,7 @@ echo ""
 echo "📋 Copying custom node configurations..."
 cd "$THREEGEN_DIR"
 
-# Copy andrea-nodes
-if [ -d "andrea-nodes" ]; then
-    cp -r andrea-nodes ComfyUI/custom_nodes/andrea-nodes
-    echo "✅ Copied andrea-nodes"
-fi
-
-# Copy optimized node files
-if [ -f "optnodes/hunyan_opt_nodes.py" ]; then
-    cp optnodes/hunyan_opt_nodes.py ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/nodes.py
-    echo "✅ Copied hunyan_opt_nodes.py"
-fi
-
-if [ -f "optnodes/textureGenPipeline.py" ]; then
-    cp optnodes/textureGenPipeline.py ComfyUI/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/textureGenPipeline.py
-    echo "✅ Copied textureGenPipeline.py"
-fi
-
-if [ -f "optnodes/Inspyrenet_Rembg.py" ]; then
-    cp optnodes/Inspyrenet_Rembg.py ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg/Inspyrenet_Rembg.py
-    echo "✅ Copied Inspyrenet_Rembg.py"
-fi
+# No more copy-paste! Everything is now in ComfyUI-MeshCraft
 
 echo ""
 echo "📦 Installing final dependencies..."

@@ -40,9 +40,9 @@ comfy --here model download \
   --filename Hunyuan3D-vae-v2-1-fp16.ckpt
 
 comfy --here model download \
-  --url "https://huggingface.co/lokCX/4x-Ultrasharp/blob/main/4x-UltraSharp.pth" \
+  --url "https://huggingface.co/Kim2091/UltraSharpV2/tree/main/4x-UltraSharpV2.safetensors" \
   --relative-path models/upscale_models \
-  --filename 4x-UltraSharp.pth
+  --filename 4x-UltraSharpV2.safetensors
 
 echo ""
 echo "✅ Model download complete!"
