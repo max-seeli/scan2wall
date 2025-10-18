@@ -40,7 +40,7 @@ comfy --here model download \
   --filename Hunyuan3D-vae-v2-1-fp16.ckpt
 
 comfy --here model download \
-  --url "https://huggingface.co/Kim2091/UltraSharpV2/tree/main/4x-UltraSharpV2.safetensors" \
+  --url "https://huggingface.co/Kim2091/UltraSharpV2/resolve/main/4x-UltraSharpV2.safetensors" \
   --relative-path models/upscale_models \
   --filename 4x-UltraSharpV2.safetensors
 
