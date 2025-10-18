@@ -6,11 +6,6 @@ from pathlib import Path as PathLib
 # Add parent directory to path to import from 3d_gen
 sys.path.insert(0, str(PathLib(__file__).parent.parent))
 from material_properties.get_object_properties import get_object_properties
-from scan2wall.utils.paths import (
-    get_isaac_scripts_dir,
-    get_assets_csv,
-    get_usd_output_dir,
-)
 import requests
 import re
 import subprocess
@@ -154,7 +149,9 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
 
     # Log properties to CSV
     if USE_LLM:
-        assets_csv = get_assets_csv()
+        # Project root is 3 levels up from this file
+        project_root = Path(__file__).parent.parent.parent
+        assets_csv = project_root / "assets.csv"
         # Create CSV with header if it doesn't exist
         if not assets_csv.exists():
             assets_csv.parent.mkdir(parents=True, exist_ok=True)

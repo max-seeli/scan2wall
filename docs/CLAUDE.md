@@ -37,12 +37,11 @@ python main.py --listen 0.0.0.0 --port 8188
 python 3d_gen/image_collection/run.py  # Runs on port 49100
 ```
 
-**Terminal 3 - Isaac Lab (Docker-based, for manual testing):**
-```bash
-docker exec -it vscode bash
-cd /workspace/isaaclab
-./isaaclab.sh -p
-```
+**Isaac Worker** (runs automatically in Docker container):
+- Persistent FastAPI service on port 8090 inside `vscode` container
+- Started automatically by `start.sh`
+- Handles mesh conversion and simulation requests
+- Logs: `data/logs/isaac_worker.log`
 
 ### Testing and Development
 
@@ -81,23 +80,45 @@ cd 3d_gen
 bash modeldownload.sh
 ```
 
-### Isaac Sim Commands (Docker-based)
+### Isaac Worker API (Docker-based)
 
-**Run mesh conversion manually:**
+The Isaac worker is a persistent FastAPI service running inside the Docker container on port 8090.
+
+**Check worker status:**
 ```bash
-docker exec vscode bash -c "cd /workspace/isaaclab && ./isaaclab.sh -p \
-  /workspace/scan2wall/scan2wall/isaac_scripts/convert_mesh.py \
-  /workspace/scan2wall/path/to/input.glb /workspace/usd_files/output.usd \
-  --mass 0.5 --static-friction 0.6 --dynamic-friction 0.5 \
-  --collision-approximation convexHull --kit_args='--headless'"
+curl http://localhost:8090/
 ```
 
-**Run simulation manually:**
+**Trigger mesh conversion manually:**
 ```bash
-docker exec vscode bash -c "cd /workspace/isaaclab && ./isaaclab.sh -p \
-  /workspace/scan2wall/scan2wall/isaac_scripts/test_place_obj_video.py \
-  --video --usd_path_abs /workspace/usd_files/object.usd \
-  --scaling_factor 1.0 --kit_args='--no-window'"
+curl -X POST http://localhost:8090/convert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "asset_path": "/workspace/s2w-data/reconstructed_geoms/object.glb",
+    "usd_dir": "/workspace/s2w-data/usd_files",
+    "mass": 1.0,
+    "static_friction": 0.6,
+    "dynamic_friction": 0.5
+  }'
+```
+
+**Trigger simulation manually:**
+```bash
+curl -X POST http://localhost:8090/run_simulation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "usd_path": "/workspace/s2w-data/usd_files/object.usd",
+    "out_dir": "/workspace/s2w-data/recordings",
+    "video": true,
+    "video_length": 200,
+    "fps": 50,
+    "scaling_factor": 1.0
+  }'
+```
+
+**View Isaac worker logs:**
+```bash
+docker exec vscode tail -f /workspace/s2w-data/logs/isaac_worker.log
 ```
 
 **Check Docker containers:**
@@ -119,20 +140,19 @@ docker compose up -d
 ### Pipeline Flow
 
 ```
-Phone Upload
+Phone Upload (port 49100)
     ↓
-FastAPI Server (port 49100)
+FastAPI Server (3d_gen/image_collection/app/server.py)
     ↓
-[Parallel] → Gemini 2.0 Flash (material properties)
-    ↓
-ComfyUI API (port 8188) - Direct integration, no wrapper!
-    ↓
-Hunyuan 3D 2.1 (GLB mesh generation, ~30-60s)
-    ↓
-convert_mesh.py (GLB → USD with physics)
-    ↓
-Isaac Lab (throw simulation + video recording)
-    ↓
+ML Pipeline (ml_pipeline.py)
+    ├─→ [Parallel] Gemini 2.0 Flash API (material properties)
+    └─→ ComfyUI API (port 8188) - Direct integration
+        └─→ Hunyuan 3D 2.1 (GLB mesh generation, ~30-60s)
+            ↓
+Isaac Worker API (port 8090, inside Docker)
+    ├─→ POST /convert (GLB → USD with physics)
+    └─→ POST /run_simulation (throw simulation + video)
+        ↓
 recordings/sim_run.mp4
 ```
 
@@ -147,36 +167,50 @@ recordings/sim_run.mp4
 
 **2. ML Pipeline** (`3d_gen/image_collection/ml_pipeline.py`)
 - Orchestrates the entire processing flow
-- **NEW**: Talks directly to ComfyUI API (no wrapper needed!)
-- Calls Gemini for material inference
-- Triggers mesh conversion and simulation
-- Key function: `process_image(job_id, image_path)`
-- Key function: `generate_mesh_via_comfyui(image_path, job_id)` - Direct ComfyUI integration
+- Talks directly to ComfyUI API (port 8188) - no wrapper needed
+- Calls Gemini API for material inference
+- Communicates with Isaac Worker API (port 8090) for conversion and simulation
+- Key functions:
+  - `process_image(job_id, image_path, jobs_dict)` - Main orchestration
+  - `generate_mesh_via_comfyui(image_path, job_id)` - Direct ComfyUI integration
+  - `convert_mesh(out_file, fname, mass, df, ds)` - Calls Isaac worker `/convert`
+  - `make_throwing_anim(file, scaling, job_id)` - Calls Isaac worker `/run_simulation`
 
 **3. Material Inference** (`3d_gen/material_properties/get_object_properties.py`)
 - Uses Gemini 2.0 Flash multimodal LLM
 - Returns JSON with: mass, dimensions, friction coefficients, object type
 - Controlled by `USE_LLM` flag in ml_pipeline.py
 
-**4. ComfyUI Integration** (Direct API, no wrapper)
+**4. ComfyUI Integration** (Direct API)
 - ML pipeline posts workflow JSON directly to ComfyUI's `/prompt` endpoint
 - Polls `/history/{prompt_id}` for completion
 - Retrieves GLB from output directory
-- Uses workflow: `3d_gen/workflows/api_prompt_strcnst.json`
+- Uses workflow: `3d_gen/workflows/image-to-texture-mesh.json`
 
-**5. Mesh Converter** (`isaac_scripts/convert_mesh.py`)
-- Converts GLB → USD using Isaac Lab utilities
+**5. Isaac Worker** (`isaac/isaac_scripts/isaac_worker.py`)
+- Persistent FastAPI service running inside Docker `vscode` container
+- Listens on port 8090 (accessible from host)
+- Manages Isaac Lab's main Kit loop for GPU-accelerated physics
+- **Endpoints:**
+  - `GET /` - Health check (returns status and queue size)
+  - `POST /convert` - Convert GLB → USD with physics properties
+  - `POST /run_simulation` - Run throw simulation and generate video
+- Processes jobs sequentially on Isaac's main thread
+- Reuses camera between simulations for efficiency
+
+**6. Mesh Conversion** (via Isaac Worker `/convert`)
+- Converts GLB → USD using Isaac Lab's `MeshConverter`
 - Applies physics properties from Gemini inference
-- Sets collision mesh, mass, friction, inertia
-- Saves to `USD_OUTPUT_DIR` (default: `/workspace/isaaclab`)
+- Sets collision mesh, mass, friction coefficients
+- Saves to container path: `/workspace/s2w-data/usd_files/`
 
-**5. Simulation** (`isaac_scripts/test_place_obj_video.py`)
+**7. Simulation** (via Isaac Worker `/run_simulation`)
 - Loads USD object into Isaac Sim scene
-- Creates 20-level pyramid target
-- Throws object at 17 m/s
-- Records 200 physics steps to MP4
-- Skips first 10 frames (warmup)
-- Outputs to `recordings/sim_run.mp4`
+- Creates 20-level pyramid target (blue cubes)
+- Applies throwing velocity: 17 m/s forward
+- Records 200 physics steps (~4 seconds) at 1920×1080
+- Skips first 10 frames (warmup period)
+- Encodes with ffmpeg (H.264) to `recordings/sim_run.mp4`
 
 ### Path Configuration
 
@@ -196,8 +230,9 @@ All paths support environment variable overrides via `.env` file.
 **All components run on one machine:**
 - ComfyUI on port 8188 (3D generation)
 - Upload server on port 49100 (web interface)
+- Isaac Worker on port 8090 (inside Docker, accessible from host)
 - Isaac Lab runs in Docker containers (physics simulation)
-  - **vscode** container: Isaac Lab environment with Isaac Sim
+  - **vscode** container: Isaac Lab environment with Isaac Sim + Isaac Worker
   - **web-viewer** container: Streaming interface for visualizations
   - **nginx** container: Reverse proxy for web services
 - GPU: 16GB+ VRAM recommended
@@ -207,10 +242,17 @@ All paths support environment variable overrides via `.env` file.
 - Isaac Lab cloned to: `isaac/isaac-launchable/`
 - Docker Compose file: `isaac/isaac-launchable/isaac-lab/docker-compose.yml`
 - Container mounts:
-  - Host `/home/ubuntu/scan2wall` → Container `/workspace/scan2wall`
+  - Host `/home/ubuntu/scan2wall/isaac/isaac_scripts` → Container `/workspace/s2w-scripts`
+  - Host `/home/ubuntu/scan2wall/data` → Container `/workspace/s2w-data`
   - Host `/home/ubuntu/scan2wall/isaac/usd_files` → Container `/workspace/usd_files`
-  - Host `/home/ubuntu/scan2wall/recordings` → Container `/workspace/recordings`
 - Isaac Lab inside container at: `/workspace/isaaclab`
+
+**Key Path Mappings (Host → Container):**
+- `/home/ubuntu/scan2wall/data/uploaded_pictures` → `/workspace/s2w-data/uploaded_pictures`
+- `/home/ubuntu/scan2wall/data/reconstructed_geoms` → `/workspace/s2w-data/reconstructed_geoms`
+- `/home/ubuntu/scan2wall/data/usd_files` → `/workspace/s2w-data/usd_files`
+- `/home/ubuntu/scan2wall/data/recordings` → `/workspace/s2w-data/recordings`
+- `/home/ubuntu/scan2wall/isaac/isaac_scripts` → `/workspace/s2w-scripts`
 
 ## Important Technical Details
 
@@ -251,13 +293,17 @@ Upload server performs two-stage validation:
 - `COMFY_INPUT_DIR`: Where ComfyUI reads images (default: auto-detected)
 - `COMFY_OUTPUT_DIR`: Where ComfyUI writes GLB files (default: auto-detected)
 - `ISAAC_WORKSPACE`: Isaac Lab path **inside Docker container** (default: /workspace/isaaclab)
+- `ISAAC_WORKER_URL`: Isaac Worker API URL (default: http://localhost:8090)
 - `USD_OUTPUT_DIR`: Where USD files are saved on host (default: /home/ubuntu/scan2wall/isaac/usd_files)
 - All other path variables (see "Path Configuration" section above)
 
 **Important for Docker setup:**
 - `ISAAC_WORKSPACE` refers to the container path (`/workspace/isaaclab`)
-- Host paths get converted to container paths in `ml_pipeline.py` (e.g., `/home/ubuntu/scan2wall` → `/workspace/scan2wall`)
-- The ML pipeline uses `docker exec vscode` to run Isaac scripts inside containers
+- Host paths get converted to container paths in `ml_pipeline.py` using pattern:
+  - Host: `/home/ubuntu/scan2wall/data/*` → Container: `/workspace/s2w-data/*`
+  - Host: `/home/ubuntu/scan2wall` → Container: `/workspace`
+- The ML pipeline communicates with Isaac Worker via HTTP API (port 8090)
+- Isaac Worker runs inside the `vscode` container, started by `start.sh`
 
 See `.env.example` for complete configuration template.
 
@@ -298,28 +344,36 @@ docker compose up -d  # Start containers
 docker compose logs vscode  # View logs
 ```
 
-**Docker exec fails:**
-- Ensure `vscode` container is running: `docker ps | grep vscode`
-- Check container logs: `docker logs vscode`
-- Restart containers if needed: `cd isaac/isaac-launchable/isaac-lab && docker compose restart`
+**Isaac Worker not responding:**
+- Check if worker is running: `curl http://localhost:8090/`
+- View worker logs: `docker exec vscode tail -f /workspace/s2w-data/logs/isaac_worker.log`
+- Restart worker: Kill existing process and restart via `start.sh`
+- Check if vscode container is running: `docker ps | grep vscode`
+
+**Docker containers not running:**
+- List containers: `docker ps -a`
+- Start containers: `cd isaac/isaac-launchable/isaac-lab && docker compose up -d`
+- Check logs: `docker logs vscode` or `docker logs web-viewer`
 
 **Path errors in Docker:**
-- Host paths: `/home/ubuntu/scan2wall/...`
-- Container paths: `/workspace/scan2wall/...`
+- Host paths: `/home/ubuntu/scan2wall/data/*`
+- Container paths: `/workspace/s2w-data/*`
 - The ML pipeline automatically converts host → container paths
 - Isaac Lab inside container: `/workspace/isaaclab`
+- Isaac Worker expects container paths in API requests
 
 ## Development Tips
 
 - First 3D generation takes ~60s (model loading), subsequent ones ~30s (cached)
-- The `--real-time` flag in simulation slows it to real-time playback
-- Set `USE_LLM = False` in ml_pipeline.py to skip Gemini inference (faster testing)
+- Set `USE_LLM = False` in ml_pipeline.py to skip Gemini inference (faster testing with default physics)
 - Set `USE_SCALING = False` to disable object scaling (use 1.0)
-- Videos saved to `recordings/` directory in project root
+- Videos saved to `data/recordings/` directory
 - Frame sequences temporarily saved to `recordings/frames/` then deleted after encoding
 - Simulation skips first 10 frames to avoid warmup artifacts
-- Isaac scripts execute inside Docker via `docker exec vscode bash -c`
+- Isaac Worker runs persistently - it reuses the camera and scene between jobs for efficiency
 - Path conversion happens automatically in ML pipeline (host paths → container paths)
+- The Isaac Worker API allows parallel development: you can test conversion/simulation independently
+- Check worker queue status with `curl http://localhost:8090/` to see if jobs are pending
 
 ## Project Structure Note
 
@@ -334,6 +388,18 @@ The source code is in `3d_gen/`. Imports now use direct relative imports within 
 - **Python**: 3.10+ (managed via `uv` package manager)
 - **3D Generation**: Hunyuan 3D 2.1 via ComfyUI
 - **Material Analysis**: Google Gemini 2.0 Flash
-- **Physics**: NVIDIA Isaac Sim (Isaac Lab)
-- **Backend**: FastAPI
+- **Physics**: NVIDIA Isaac Sim (Isaac Lab) - Docker-based deployment
+- **Backend**: FastAPI (upload server + Isaac Worker API)
 - **Frontend**: HTML5 + vanilla JavaScript
+- **Container Runtime**: Docker + Docker Compose
+- **Video Encoding**: FFmpeg
+
+## System Ports
+
+| Port | Service | Location | Purpose |
+|------|---------|----------|---------|
+| 8188 | ComfyUI | Host | 3D mesh generation API |
+| 49100 | Upload Server | Host | Web interface & image uploads |
+| 8090 | Isaac Worker | Docker (vscode) | Mesh conversion & simulation API |
+| 49110 | Web Viewer | Docker | Isaac Lab streaming interface |
+| 49111 | Nginx | Docker | Reverse proxy for web services |

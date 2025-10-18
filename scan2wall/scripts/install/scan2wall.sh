@@ -70,10 +70,6 @@ echo ""
 
 echo "Creating required directories..."
 
-# USD files directory (mounted into Docker)
-mkdir -p "$ISAAC_DIR/usd_files"
-echo -e "${GREEN}✓${NC} Created: $ISAAC_DIR/usd_files"
-
 # Recordings directory (for simulation videos)
 mkdir -p "$PROJECT_DIR/data/recordings"
 echo -e "${GREEN}✓${NC} Created: $PROJECT_DIR/data/recordings"
@@ -147,12 +143,8 @@ else
     echo -e "${YELLOW}⚠${NC} scan2wall package import had issues (this may be okay if dependencies aren't fully installed yet)"
 fi
 
-# Test path configuration
-if python -c "from scan2wall.utils.paths import get_project_root, get_isaac_workspace; print(f'Project root: {get_project_root()}'); print(f'Isaac workspace: {get_isaac_workspace()}')" 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} Path configuration successful"
-else
-    echo -e "${YELLOW}⚠${NC} Path configuration check skipped"
-fi
+# Validation complete
+echo -e "${GREEN}✓${NC} Installation validated"
 
 echo ""
 

@@ -339,16 +339,6 @@ else
     echo "ISAAC_WORKSPACE=/workspace/isaaclab" >> "$ENV_FILE"
 fi
 
-# Update USD output directory (accessible from host)
-if grep -q "^USD_OUTPUT_DIR=" "$ENV_FILE"; then
-    sed -i "s|^USD_OUTPUT_DIR=.*|USD_OUTPUT_DIR=$ISAAC_DIR/usd_files|" "$ENV_FILE"
-else
-    echo "USD_OUTPUT_DIR=$ISAAC_DIR/usd_files" >> "$ENV_FILE"
-fi
-
-# Create USD output directory on host
-mkdir -p "$ISAAC_DIR/usd_files"
-
 echo -e "${GREEN}✓${NC} Environment configured in $ENV_FILE"
 echo ""
 
@@ -393,7 +383,6 @@ echo "    - web-viewer: Streaming UI"
 echo "    - nginx: Reverse proxy"
 echo "  • Isaac Sim: Pre-installed in container at /isaac-sim"
 echo "  • Isaac Lab: Pre-installed at /workspace/isaaclab"
-echo "  • Host mount: $ISAAC_DIR/usd_files"
 echo ""
 echo "Container management:"
 echo ""
