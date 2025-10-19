@@ -13,10 +13,8 @@ import imghdr
 from fastapi import HTTPException
 from ml_pipeline import process_image
 
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"/ "uploaded_pictures"
-PROCESSED_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "reconstructed_geoms"
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "JOBS"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Scan2Mesh")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
@@ -54,20 +52,22 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
         )
 
     # --- Step 4: save ---
+    job_id = uuid.uuid4().hex[:8]
+
     ts = time.strftime("%Y%m%d-%H%M%S")
     suffix = uuid.uuid4().hex[:6]
-    safe_name = "".join(ch for ch in Path(file.filename).name if ch.isalnum() or ch in ("-", "_", ".", " ")).strip() or "photo.jpg"
-    fname = f"{ts}-{suffix}-{safe_name}"
-    dest = UPLOAD_DIR / fname
+    fname = f"{ts}.{kind}"
+    dest = UPLOAD_DIR / job_id
+    dest.mkdir(parents=True, exist_ok=True)
+    spath = dest / fname
 
-    dest.write_bytes(contents)  # simpler save
+    spath.write_bytes(contents)  # simpler save
 
     # --- Step 5: queue job ---
-    job_id = uuid.uuid4().hex
     JOBS[job_id] = {
         "id": job_id,
         "filename": fname,
-        "path": str(dest),
+        "path": str(spath),
         "status": "queued",
         "status_detail": "Waiting in queue...",
         "created_at": time.time(),

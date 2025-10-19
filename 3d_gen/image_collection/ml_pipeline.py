@@ -92,9 +92,9 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     # Create status updater
     status = StatusUpdater(jobs_dict, job_id)
 
-    p = Path(image_path)
-    out_dir = p.parent.parent / "reconstructed_geoms"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    img = next(Path(image_path).glob("*"), None)
+    if img is None:
+        raise FileNotFoundError(f"No image found in {image_path}")
 
     # Generate 3D mesh via ComfyUI API
     status.start("🎨 Creating 3D mesh with ComfyUI (Hunyuan 3D)...")
@@ -102,7 +102,8 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     print("Starting 3D mesh generation via ComfyUI...")
     print("=" * 60)
 
-    glb_path = generate_mesh_via_comfyui(image_path, job_id)
+    glb_path = generate_mesh_via_comfyui(img, job_id)
+    
     print(f"✓ 3D mesh generated: {glb_path}")
     status.stop("✓ 3D mesh created successfully")
 
@@ -116,12 +117,10 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if USE_LLM:
         status.start("🧠 Inferring physical properties with Gemini AI...")
         print("\nInferring material properties with Gemini...")
-        props = get_object_properties(image_path)
+        props = get_object_properties(img)
         
-        out_dir = p.parent.parent / "material_props"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        props_file = out_dir / f"{p.stem}_properties.json"
-        with open(props_file, 'w') as f:
+        props_file = Path(image_path) / "properties.json"
+        with open(str(props_file), 'w') as f:
             json.dump(props, f, indent=2)
         
         print(f"✓ Saved properties to {props_file}")
@@ -146,20 +145,6 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds)
     print(f"✓ Mesh converted to USD: {usd_file}")
     status.stop("✓ Mesh converted to USD with physics properties")
-
-    # Log properties to CSV
-    if USE_LLM:
-        # Project root is 3 levels up from this file
-        project_root = Path(__file__).parent.parent.parent
-        assets_csv = project_root / "assets.csv"
-        # Create CSV with header if it doesn't exist
-        if not assets_csv.exists():
-            assets_csv.parent.mkdir(parents=True, exist_ok=True)
-            with open(assets_csv, "w") as f:
-                f.write("object_type,scaling,mass,usd_path\n")
-
-        with open(assets_csv, "a") as f:
-            f.write(f"{props['object_type']},{scaling},{mass},{usd_file}\n")
 
     # Trigger Isaac Sim simulation and wait for completion
     status.start("🎮 Running simulation in Isaac Sim...")
@@ -251,47 +236,17 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
                 # Check if completed
                 if "outputs" in prompt_history:
                     print("✓ ComfyUI generation complete!")
-
-                    # Find the output GLB file
-                    # Look for node 89 (SaveModel) outputs
-                    for node_id, node_output in prompt_history["outputs"].items():
-                        if "glb" in node_output or "meshes" in node_output:
-                            # The output structure varies, try to find the GLB filename
-                            if "meshes" in node_output:
-                                files = node_output["meshes"]
-                                if files and len(files) > 0:
-                                    glb_filename = files[0].get("filename", "")
-                                    if glb_filename:
-                                        glb_path = comfy_output_dir / glb_filename
-                                        if glb_path.exists():
-                                            # Move to processed directory
-                                            processed_dir = Path(image_path).parent.parent / "reconstructed_geoms"
-                                            processed_dir.mkdir(parents=True, exist_ok=True)
-                                            final_path = processed_dir / f"{job_id}.glb"
-                                            shutil.copy2(glb_path, final_path)
-                                            return str(final_path)
-
-                    # Fallback: search output directory for recent GLB files
-                    print("Searching output directory for GLB file...")
-                    glb_files = list(comfy_output_dir.glob(f"*{job_id}*.glb"))
-
-                    if not glb_files:
-                        # Try finding any recent GLB
-                        glb_files = sorted(
-                            comfy_output_dir.glob("*.glb"),
-                            key=lambda p: p.stat().st_mtime,
-                            reverse=True
-                        )
-
-                    if glb_files:
-                        glb_path = glb_files[0]
-                        processed_dir = Path(image_path).parent.parent / "reconstructed_geoms"
-                        processed_dir.mkdir(parents=True, exist_ok=True)
-                        final_path = processed_dir / f"{job_id}.glb"
-                        shutil.copy2(glb_path, final_path)
-                        return str(final_path)
-
-                    raise RuntimeError(f"ComfyUI completed but no GLB file found in {comfy_output_dir}")
+                    processed_dir = Path(image_path).parent
+                    
+                    files_to_move = comfy_output_dir.glob(f"{job_id}*")
+                    for ftm in files_to_move:
+                        if ftm.exists():
+                            final_path = processed_dir / ftm.name
+                            shutil.copy2(ftm, final_path)
+                    
+                    glb_filename = job_id+'.glb'
+                    glb_path = processed_dir / glb_filename
+                    return str(glb_path)
 
         # Wait before polling again
         time.sleep(5)
@@ -307,9 +262,8 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
     fname_new = fname.replace(".glb", ".usd")
     print(f"Converting {fname} → {fname_new} via Isaac worker...")
 
-    usd_dir = out_file.parent.parent / "usd_files"
-    usd_dir.mkdir(parents=True, exist_ok=True)
-
+    usd_dir = out_file.parent
+    
     container_glb_path = str(out_file).replace(
         "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
     )
@@ -343,7 +297,7 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
     print("🎬 Creating throwing animation via Isaac worker...")
 
     container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
-    out_dir = "/workspace/s2w-data/recordings"
+    out_dir = str(Path(container_usd_path).parent)
 
     payload = {
         "usd_path": container_usd_path,

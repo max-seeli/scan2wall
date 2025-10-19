@@ -47,11 +47,11 @@
   "20": {
     "inputs": {
       "view_size": 768,
-      "steps": 8,
+      "steps": 6,
       "guidance_scale": 3,
       "texture_size": 1024,
       "unwrap_mesh": false,
-      "seed": 561899404196683,
+      "seed": 1063876346687992,
       "use_cache": true,
       "trimesh": [
         "45",
@@ -100,7 +100,7 @@
       "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
       "steps": 50,
       "guidance_scale": 8.5,
-      "seed": 705623792865391,
+      "seed": 25797796757005,
       "attention_mode": "sageattn",
       "use_cache": true,
       "image": [
@@ -116,7 +116,7 @@
   "45": {
     "inputs": {
       "trimesh": [
-        "99",
+        "165",
         0
       ]
     },
@@ -127,7 +127,10 @@
   },
   "46": {
     "inputs": {
-      "filename_prefix": "MultiView",
+      "filename_prefix": [
+        "177",
+        0
+      ],
       "images": [
         "20",
         1
@@ -197,11 +200,11 @@
   "86": {
     "inputs": {
       "image": [
-        "114",
+        "142",
         0
       ],
       "mask": [
-        "118",
+        "136",
         3
       ]
     },
@@ -228,36 +231,6 @@
       "title": "String Constant"
     }
   },
-  "95": {
-    "inputs": {
-      "torchscript_jit": "on",
-      "image": [
-        "112",
-        0
-      ]
-    },
-    "class_type": "InspyrenetRembg",
-    "_meta": {
-      "title": "Inspyrenet Rembg"
-    }
-  },
-  "99": {
-    "inputs": {
-      "remove_floaters": true,
-      "remove_degenerate_faces": true,
-      "reduce_faces": true,
-      "max_facenum": 40000,
-      "smooth_normals": true,
-      "trimesh": [
-        "9",
-        0
-      ]
-    },
-    "class_type": "Hy3D21PostprocessMeshSimple",
-    "_meta": {
-      "title": "PostProcessAndrea"
-    }
-  },
   "104": {
     "inputs": {
       "model_file": [
@@ -273,7 +246,7 @@
   },
   "112": {
     "inputs": {
-      "image": "unnamed.jpg"
+      "image": "WhatsApp Image 2025-10-15 at 23.40.28.jpeg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -282,7 +255,10 @@
   },
   "113": {
     "inputs": {
-      "filename_prefix": "decoded",
+      "filename_prefix": [
+        "175",
+        0
+      ],
       "file_format": "stl",
       "save_file": true,
       "trimesh": [
@@ -295,37 +271,14 @@
       "title": "Hunyuan 3D 2.1 Export Mesh"
     }
   },
-  "114": {
-    "inputs": {
-      "x": 0,
-      "y": 0,
-      "resize_source": false,
-      "destination": [
-        "115",
-        0
-      ],
-      "source": [
-        "118",
-        0
-      ],
-      "mask": [
-        "118",
-        3
-      ]
-    },
-    "class_type": "ImageCompositeMasked",
-    "_meta": {
-      "title": "ImageCompositeMasked"
-    }
-  },
   "115": {
     "inputs": {
       "light_position": "Top Light",
       "multiplier": 1,
       "start_color": "#FFFFFF",
       "end_color": "#FFFFFF",
-      "width": 1024,
-      "height": 1024
+      "width": 520,
+      "height": 520
     },
     "class_type": "ImageGradient",
     "_meta": {
@@ -334,9 +287,12 @@
   },
   "116": {
     "inputs": {
-      "filename_prefix": "nobackground",
+      "filename_prefix": [
+        "174",
+        0
+      ],
       "images": [
-        "114",
+        "142",
         0
       ]
     },
@@ -355,41 +311,17 @@
       "right_reserve": 20,
       "round_to_multiple": "8",
       "image": [
-        "95",
+        "153",
         0
       ],
       "mask": [
-        "121",
-        0
+        "153",
+        1
       ]
     },
     "class_type": "LayerUtility: CropByMask V2",
     "_meta": {
       "title": "LayerUtility: CropByMask V2"
-    }
-  },
-  "118": {
-    "inputs": {
-      "width": 1024,
-      "height": 1024,
-      "upscale_method": "nearest-exact",
-      "keep_proportion": "pad",
-      "pad_color": "0, 0, 0",
-      "crop_position": "center",
-      "divisible_by": 2,
-      "device": "cpu",
-      "image": [
-        "124",
-        0
-      ],
-      "mask": [
-        "117",
-        1
-      ]
-    },
-    "class_type": "ImageResizeKJv2",
-    "_meta": {
-      "title": "Resize Image v2"
     }
   },
   "119": {
@@ -405,81 +337,9 @@
       "title": "Preview 3D"
     }
   },
-  "120": {
-    "inputs": {
-      "expand": -10,
-      "tapered_corners": true,
-      "mask": [
-        "95",
-        1
-      ]
-    },
-    "class_type": "GrowMask",
-    "_meta": {
-      "title": "GrowMask"
-    }
-  },
-  "121": {
-    "inputs": {
-      "expand": 10,
-      "tapered_corners": true,
-      "mask": [
-        "120",
-        0
-      ]
-    },
-    "class_type": "GrowMask",
-    "_meta": {
-      "title": "GrowMask"
-    }
-  },
-  "122": {
-    "inputs": {
-      "model_file": [
-        "123",
-        0
-      ],
-      "image": ""
-    },
-    "class_type": "Preview3D",
-    "_meta": {
-      "title": "Preview 3D"
-    }
-  },
-  "123": {
-    "inputs": {
-      "filename_prefix": "decoded_after_remeshing",
-      "file_format": "stl",
-      "save_file": true,
-      "trimesh": [
-        "99",
-        0
-      ]
-    },
-    "class_type": "Hy3D21ExportMesh",
-    "_meta": {
-      "title": "Hunyuan 3D 2.1 Export Mesh"
-    }
-  },
-  "124": {
-    "inputs": {
-      "upscale_model": [
-        "128",
-        0
-      ],
-      "image": [
-        "117",
-        0
-      ]
-    },
-    "class_type": "ImageUpscaleWithModel",
-    "_meta": {
-      "title": "Upscale Image (using Model)"
-    }
-  },
   "128": {
     "inputs": {
-      "model_name": "4x-UltraSharpV2.safetensors"
+      "model_name": "SwinIR-Helaman-Lexica-2x.pth"
     },
     "class_type": "UpscaleModelLoader",
     "_meta": {
@@ -501,7 +361,10 @@
   },
   "130": {
     "inputs": {
-      "filename_prefix": "uv",
+      "filename_prefix": [
+        "176",
+        0
+      ],
       "file_format": "stl",
       "save_file": true,
       "trimesh": [
@@ -512,6 +375,242 @@
     "class_type": "Hy3D21ExportMesh",
     "_meta": {
       "title": "Hunyuan 3D 2.1 Export Mesh"
+    }
+  },
+  "136": {
+    "inputs": {
+      "width": 520,
+      "height": 520,
+      "upscale_method": "lanczos",
+      "keep_proportion": "pad",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "117",
+        0
+      ],
+      "mask": [
+        "117",
+        1
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "142": {
+    "inputs": {
+      "x": 1,
+      "y": 0,
+      "resize_source": false,
+      "destination": [
+        "115",
+        0
+      ],
+      "source": [
+        "136",
+        0
+      ],
+      "mask": [
+        "136",
+        3
+      ]
+    },
+    "class_type": "ImageCompositeMasked",
+    "_meta": {
+      "title": "ImageCompositeMasked"
+    }
+  },
+  "150": {
+    "inputs": {
+      "text_input": "",
+      "task": "caption",
+      "fill_mask": true,
+      "keep_model_loaded": false,
+      "max_new_tokens": 1024,
+      "num_beams": 3,
+      "do_sample": true,
+      "output_mask_select": "",
+      "seed": 4,
+      "image": [
+        "112",
+        0
+      ],
+      "florence2_model": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "Florence2Run",
+    "_meta": {
+      "title": "Florence2Run"
+    }
+  },
+  "151": {
+    "inputs": {
+      "model": "microsoft/Florence-2-large",
+      "precision": "fp16",
+      "attention": "sdpa",
+      "convert_to_safetensors": false
+    },
+    "class_type": "DownloadAndLoadFlorence2Model",
+    "_meta": {
+      "title": "DownloadAndLoadFlorence2Model"
+    }
+  },
+  "152": {
+    "inputs": {
+      "model_name": "GroundingDINO_SwinB (938MB)"
+    },
+    "class_type": "GroundingDinoModelLoader (segment anything2)",
+    "_meta": {
+      "title": "GroundingDinoModelLoader (segment anything2)"
+    }
+  },
+  "153": {
+    "inputs": {
+      "prompt": [
+        "158",
+        0
+      ],
+      "threshold": 0.2,
+      "sam_model": [
+        "154",
+        0
+      ],
+      "grounding_dino_model": [
+        "152",
+        0
+      ],
+      "image": [
+        "112",
+        0
+      ]
+    },
+    "class_type": "GroundingDinoSAM2Segment (segment anything2)",
+    "_meta": {
+      "title": "GroundingDinoSAM2Segment (segment anything2)"
+    }
+  },
+  "154": {
+    "inputs": {
+      "model_name": "sam2_hiera_large.pt"
+    },
+    "class_type": "SAM2ModelLoader (segment anything2)",
+    "_meta": {
+      "title": "SAM2ModelLoader (segment anything2)"
+    }
+  },
+  "155": {
+    "inputs": {
+      "output": "",
+      "source": [
+        "158",
+        0
+      ]
+    },
+    "class_type": "Display Any (rgthree)",
+    "_meta": {
+      "title": "Display Any (rgthree)"
+    }
+  },
+  "158": {
+    "inputs": {
+      "text": [
+        "150",
+        2
+      ],
+      "delimiter": "sitting"
+    },
+    "class_type": "CR Split String",
+    "_meta": {
+      "title": "🔤 CR Split String"
+    }
+  },
+  "160": {
+    "inputs": {
+      "model_name": "4x-UltraSharpV2.safetensors"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "Load Upscale Model"
+    }
+  },
+  "165": {
+    "inputs": {
+      "remove_floaters": false,
+      "remove_degenerate_faces": false,
+      "reduce_faces": false,
+      "max_facenum": 40000,
+      "smooth_normals": true,
+      "smooth_surface": true,
+      "trimesh": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "Hy3D21PostprocessMesh",
+    "_meta": {
+      "title": "Hunyuan 3D 2.1 Post Process Trimesh"
+    }
+  },
+  "174": {
+    "inputs": {
+      "string_a": [
+        "89",
+        0
+      ],
+      "string_b": "_nobackground",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate"
+    }
+  },
+  "175": {
+    "inputs": {
+      "string_a": [
+        "89",
+        0
+      ],
+      "string_b": "_decoded",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate"
+    }
+  },
+  "176": {
+    "inputs": {
+      "string_a": [
+        "89",
+        0
+      ],
+      "string_b": "_processed",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate"
+    }
+  },
+  "177": {
+    "inputs": {
+      "string_a": [
+        "89",
+        0
+      ],
+      "string_b": "_multiview",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate"
     }
   }
 }
