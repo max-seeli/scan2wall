@@ -95,6 +95,7 @@ async def get_job_status(job_id: str):
         "filename": job["filename"],
         "created_at": job["created_at"],
         "processed_path": job.get("processed_path"),
+        "video_filename": job.get("video_filename"),
         "error": job.get("error"),
     })
 
@@ -102,6 +103,30 @@ async def get_job_status(job_id: str):
 async def list_jobs():
     """List all jobs (for debugging/admin)."""
     return JSONResponse({"jobs": list(JOBS.values())})
+
+@app.get("/video/{job_id}")
+async def get_video(job_id: str):
+    """Serve the simulation video for a completed job."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = JOBS[job_id]
+
+    # Check if job is complete and has a video
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail="Job not yet complete")
+
+    video_filename = f"{job_id}_sim.mp4"
+    video_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "recordings" / video_filename
+
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=video_filename
+    )
 
 def _run_pipeline(job_id: str, path: str) -> None:
     JOBS[job_id]["status"] = "processing"
@@ -111,6 +136,12 @@ def _run_pipeline(job_id: str, path: str) -> None:
         JOBS[job_id]["status"] = "done"
         JOBS[job_id]["status_detail"] = "Complete! Simulation video generated."
         JOBS[job_id]["processed_path"] = out_path
+
+        # Store video path (convert container path to host path if needed)
+        video_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "recordings" / f"{job_id}_sim.mp4"
+        if video_path.exists():
+            JOBS[job_id]["video_path"] = str(video_path)
+            JOBS[job_id]["video_filename"] = f"{job_id}_sim.mp4"
     except Exception as e:
         JOBS[job_id]["status"] = "error"
         JOBS[job_id]["status_detail"] = f"Error: {str(e)}"

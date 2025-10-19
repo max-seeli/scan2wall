@@ -81,7 +81,7 @@ def design_scene(usd_path_abs, scaling_factor=1.0):
         mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
         collision_props=sim_utils.CollisionPropertiesCfg(),
     )
-    obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 2.0))
+    obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 2.5))
 
 def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     ffmpeg = shutil.which("ffmpeg")
@@ -260,6 +260,7 @@ while app_interface.is_running():
                 fps = data.get('fps', 50)
                 scaling_factor = data.get('scaling_factor', 1.0)
                 skip_first = data.get('skip_first', 10)
+                request_job_id = data.get('job_id', 'unknown')  # Get job_id from request
                 
                 stage = sim_context.stage
                 camera_path = "/World/RenderCamera"
@@ -403,7 +404,9 @@ while app_interface.is_running():
                 
                 if video:
                     print("🎥 Encoding video...")
-                    out_mp4 = os.path.join(out_dir, "sim_run.mp4")
+                    # Use job_id in video filename for unique naming
+                    video_filename = f"{request_job_id}_sim.mp4"
+                    out_mp4 = os.path.join(out_dir, video_filename)
                     ffmpeg_encode(frames_dir, out_mp4, fps, skip_first)
                     shutil.rmtree(frames_dir, ignore_errors=True)
                 

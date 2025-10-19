@@ -114,6 +114,17 @@
       border-radius: 8px;
       margin-top: 1rem;
     }
+    #videoContainer {
+      margin-top: 1.5rem;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+    }
+    #videoContainer video {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -131,6 +142,8 @@
 
     <div id="progress" class="small" style="margin-top: 1rem;"></div>
 
+    <div id="videoContainer" class="hidden"></div>
+
     <p class="small" style="margin-top: 1rem;">
       Tip: Add this page to your home screen for a one-tap workflow.
     </p>
@@ -139,6 +152,7 @@
   <script>
     const fileInput = document.getElementById('file');
     const progress = document.getElementById('progress');
+    const videoContainer = document.getElementById('videoContainer');
 
     // Validate file type before upload
     function isValidImageFile(file) {
@@ -158,6 +172,17 @@
       progress.innerHTML = `<div class="${type}">${message}</div>`;
     }
 
+    // Show video player
+    function showVideo(jobId) {
+      videoContainer.classList.remove('hidden');
+      videoContainer.innerHTML = `
+        <video controls autoplay loop>
+          <source src="/video/${jobId}" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      `;
+    }
+
     // Poll job status
     async function pollJobStatus(jobId) {
       try {
@@ -170,6 +195,7 @@
           showStatus('<div class="spinner"></div>' + (data.status_detail || 'Processing...'), 'info');
         } else if (data.status === 'done') {
           showStatus('✅ ' + (data.status_detail || 'Complete! Your simulation has been generated.'), 'success');
+          showVideo(jobId);  // Display the video
           return true; // done
         } else if (data.status === 'error') {
           showStatus('❌ ' + (data.status_detail || data.error || 'Unknown error'), 'error');

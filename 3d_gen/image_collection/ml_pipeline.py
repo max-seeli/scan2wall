@@ -341,10 +341,10 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
     Trigger Isaac worker to run the throwing simulation and generate a video.
     """
     print("🎬 Creating throwing animation via Isaac worker...")
-    
+
     container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
     out_dir = "/workspace/s2w-data/recordings"
-    
+
     payload = {
         "usd_path": container_usd_path,
         "out_dir": out_dir,
@@ -352,6 +352,7 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
         "video_length": 200,
         "fps": 50,
         "scaling_factor": scaling,
+        "job_id": job_id,  # Pass job_id for video naming
     }
     
     try:

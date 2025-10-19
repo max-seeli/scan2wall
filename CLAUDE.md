@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. Analyzed for physical properties using Gemini 2.0 Flash
 3. Simulated being thrown at a pyramid in NVIDIA Isaac Sim
 
-Total processing time: ~50-100 seconds per object.
+Total processing time: **~150s first run**, **~65-75s subsequent runs** (model caching).
 
 ## Development Commands
 
@@ -56,15 +56,20 @@ cd 3d_gen/material_properties
 python get_object_properties.py <image_path>
 ```
 
-**View path configuration:**
+**Simple video viewer for testing:**
 ```bash
-python 3d_gen/utils/paths.py
+python 3d_gen/image_collection/test.py  # Video viewer on port 8000
 ```
 
 **View all jobs (admin):**
 ```
 http://localhost:49100/jobs
 ```
+
+**Watch simulation video:**
+- Videos automatically display on upload page when job completes
+- Or access directly: `http://localhost:49100/video/{job_id}`
+- Videos saved as: `data/recordings/{job_id}_sim.mp4`
 
 ### ComfyUI Management
 
@@ -163,7 +168,8 @@ recordings/sim_run.mp4
 - Handles image uploads, validation, job tracking
 - In-memory job storage (JOBS dict)
 - Background task processing via `ml_pipeline.py`
-- Endpoints: `/`, `/upload`, `/job/{job_id}`, `/jobs`
+- Endpoints: `/`, `/upload`, `/job/{job_id}`, `/jobs`, `/video/{job_id}`
+- Videos automatically display on upload page when job completes
 
 **2. ML Pipeline** (`3d_gen/image_collection/ml_pipeline.py`)
 - Orchestrates the entire processing flow
@@ -210,17 +216,18 @@ recordings/sim_run.mp4
 - Applies throwing velocity: 17 m/s forward
 - Records 200 physics steps (~4 seconds) at 1920×1080
 - Skips first 10 frames (warmup period)
-- Encodes with ffmpeg (H.264) to `recordings/sim_run.mp4`
+- Encodes with ffmpeg (H.264) to `data/recordings/{job_id}_sim.mp4`
+- Each job gets unique video file (no overwriting)
 
 ### Path Configuration
 
-The project uses a centralized path management system (`3d_gen/utils/paths.py`):
+Path management is handled via environment variables in `.env` file:
 
 - **PROJECT_ROOT**: Auto-detected from repo structure
-- **ISAAC_WORKSPACE**: Where Isaac Lab is installed (default: `/workspace/isaac`)
-- **ISAAC_SCRIPTS_DIR**: Location of convert_mesh.py and simulation scripts
-- **USD_OUTPUT_DIR**: Where converted USD meshes go (default: `/workspace/isaac/usd_files`)
-- **RECORDINGS_DIR**: Video output directory (default: `{PROJECT_ROOT}/recordings`)
+- **ISAAC_WORKSPACE**: Isaac Lab path inside container (default: `/workspace/isaaclab`)
+- **ISAAC_SCRIPTS_DIR**: Location of isaac_worker.py and simulation scripts
+- **USD_OUTPUT_DIR**: Where converted USD meshes go (default: `/workspace/s2w-data/usd_files`)
+- **RECORDINGS_DIR**: Video output directory (default: `{PROJECT_ROOT}/data/recordings`)
 - **ASSETS_CSV**: Tracks generated objects (default: `{PROJECT_ROOT}/assets.csv`)
 
 All paths support environment variable overrides via `.env` file.
@@ -277,8 +284,12 @@ Upload server performs two-stage validation:
 2. Pillow `.verify()` to detect corruption
 
 ### Performance Bottlenecks
-- 3D generation: 30-60s (GPU-bound, largest bottleneck)
-- Material inference: 2-5s (API latency)
+- **3D generation (first run): ~150s** (GPU-bound, largest bottleneck)
+  - Model loading: ~8s (only first run)
+  - 3D mesh generation: ~15s
+  - MultiView PBR texture generation: ~125s (cached after first run → ~40s)
+- **3D generation (cached): ~55-60s** (models stay in VRAM)
+- Material inference: 2-5s (API latency, Gemini API)
 - Mesh conversion: 5-10s (CPU + I/O)
 - Simulation: 10-20s (GPU-bound)
 
@@ -315,8 +326,6 @@ See `.env.example` for complete configuration template.
 
 **CUDA out of memory:** Close other GPU applications, restart ComfyUI
 
-**Path errors:** Run `python 3d_gen/utils/paths.py` to debug configuration
-
 **Import errors (ModuleNotFoundError):**
 The codebase uses direct imports within the `3d_gen/` directory. Imports are handled via `sys.path.insert()` in:
 - `3d_gen/image_collection/ml_pipeline.py`
@@ -324,9 +333,13 @@ The codebase uses direct imports within the `3d_gen/` directory. Imports are han
 
 No package installation required - imports resolve at runtime.
 
-**Missing dependencies for upload server:**
-If you get `ModuleNotFoundError` for qrcode, fastapi, etc., install:
+**Missing dependencies:**
+Dependencies are managed via `uv` (see `uv.lock`). To install:
 ```bash
+# Install dependencies with uv
+uv sync
+
+# Or manually install upload server dependencies
 pip install fastapi uvicorn python-multipart python-dotenv pillow requests google-generativeai qrcode
 ```
 
@@ -350,11 +363,6 @@ docker compose logs vscode  # View logs
 - Restart worker: Kill existing process and restart via `start.sh`
 - Check if vscode container is running: `docker ps | grep vscode`
 
-**Docker containers not running:**
-- List containers: `docker ps -a`
-- Start containers: `cd isaac/isaac-launchable/isaac-lab && docker compose up -d`
-- Check logs: `docker logs vscode` or `docker logs web-viewer`
-
 **Path errors in Docker:**
 - Host paths: `/home/ubuntu/scan2wall/data/*`
 - Container paths: `/workspace/s2w-data/*`
@@ -364,7 +372,9 @@ docker compose logs vscode  # View logs
 
 ## Development Tips
 
-- First 3D generation takes ~60s (model loading), subsequent ones ~30s (cached)
+- **First 3D generation takes ~150s** (model loading + full pipeline), **subsequent ones ~55-60s** (models cached in VRAM)
+- ComfyUI model caching provides ~64% speedup on subsequent runs
+- Device placement fix applied to handle cached models correctly (prevents CUDA errors)
 - Set `USE_LLM = False` in ml_pipeline.py to skip Gemini inference (faster testing with default physics)
 - Set `USE_SCALING = False` to disable object scaling (use 1.0)
 - Videos saved to `data/recordings/` directory
@@ -380,8 +390,7 @@ docker compose logs vscode  # View logs
 The source code is in `3d_gen/`. Imports now use direct relative imports within the `3d_gen/` directory structure (the `scan2wall` package import dependency has been removed). Key files:
 - `3d_gen/image_collection/` - Upload server and web UI
 - `3d_gen/material_properties/` - Gemini integration
-- `3d_gen/utils/` - Path configuration utilities
-- `isaac_scripts/` - Isaac Sim integration scripts
+- `isaac/isaac_scripts/` - Isaac Sim integration scripts (isaac_worker.py)
 - `3d_gen/workflows/` - ComfyUI workflow JSON files
 
 ## Tech Stack Summary
@@ -399,7 +408,7 @@ The source code is in `3d_gen/`. Imports now use direct relative imports within 
 | Port | Service | Location | Purpose |
 |------|---------|----------|---------|
 | 8188 | ComfyUI | Host | 3D mesh generation API |
-| 49100 | Upload Server | Host | Web interface & image uploads |
+| 49100 | Upload Server | Host | Web interface, image uploads & video serving |
 | 8090 | Isaac Worker | Docker (vscode) | Mesh conversion & simulation API |
 | 49110 | Web Viewer | Docker | Isaac Lab streaming interface |
 | 49111 | Nginx | Docker | Reverse proxy for web services |
