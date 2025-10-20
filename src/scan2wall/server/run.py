@@ -38,7 +38,7 @@ def main():
     except Exception:
         pass
 
-    uvicorn.run("app.server:app", host=host, port=port, reload=False, access_log=True)
+    uvicorn.run("scan2wall.server.server:app", host=host, port=port, reload=False, access_log=True)
 
 if __name__ == "__main__":
     main()

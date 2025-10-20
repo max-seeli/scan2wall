@@ -6,7 +6,8 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Colors
 RED='\033[0;31m'
@@ -16,7 +17,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Paths
-ISAAC_DIR="$SCRIPT_DIR/isaac"
+ISAAC_DIR="$PROJECT_ROOT/isaac"
 ISAAC_LAUNCHABLE_DIR="$ISAAC_DIR/isaac-launchable"
 ISAAC_LAB_COMPOSE_DIR="$ISAAC_LAUNCHABLE_DIR/isaac-lab"
 
@@ -118,7 +119,7 @@ if [ "$ALL_RUNNING" = false ]; then
     docker compose up -d
     sleep 5
     echo -e "${GREEN}✓${NC} Docker containers started"
-    cd "$SCRIPT_DIR"
+    cd "$PROJECT_ROOT"
 else
     echo -e "${GREEN}✓${NC} Isaac Lab Docker containers running"
 fi
@@ -253,11 +254,11 @@ SESSION="scan2wall"
 tmux kill-session -t $SESSION 2>/dev/null || true
 
 # Create logs directory
-mkdir -p "$SCRIPT_DIR/data/logs"
+mkdir -p "$PROJECT_ROOT/data/logs"
 
 echo "Starting ComfyUI..."
 # Create new session with ComfyUI (with logging)
-tmux new-session -d -s $SESSION -n "comfyui" "cd $SCRIPT_DIR/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188 2>&1 | tee $SCRIPT_DIR/data/logs/comfyui.log"
+tmux new-session -d -s $SESSION -n "comfyui" "cd $PROJECT_ROOT/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188 2>&1 | tee $PROJECT_ROOT/data/logs/comfyui.log"
 
 # Wait for ComfyUI to be ready
 echo "Waiting for ComfyUI to start..."
@@ -281,19 +282,19 @@ fi
 
 echo "Starting upload server..."
 # Create new window for upload server (with logging)
-tmux new-window -t $SESSION -n "upload" "cd $SCRIPT_DIR && source .venv/bin/activate && python 3d_gen/image_collection/run.py 2>&1 | tee $SCRIPT_DIR/data/logs/upload.log"
+tmux new-window -t $SESSION -n "upload" "cd $PROJECT_ROOT && source .venv/bin/activate && python -m scan2wall.server.run 2>&1 | tee $PROJECT_ROOT/data/logs/upload.log"
 
 # Wait a moment for upload server to start
 sleep 3
 
 # Start Docker log capture in background
 echo "Starting Docker log capture..."
-docker logs -f vscode >> "$SCRIPT_DIR/data/logs/isaac_vscode.log" 2>&1 &
-docker logs -f web-viewer >> "$SCRIPT_DIR/data/logs/isaac_webviewer.log" 2>&1 &
-docker logs -f isaac-lab-nginx-1 >> "$SCRIPT_DIR/data/logs/isaac_nginx.log" 2>&1 &
+docker logs -f vscode >> "$PROJECT_ROOT/data/logs/isaac_vscode.log" 2>&1 &
+docker logs -f web-viewer >> "$PROJECT_ROOT/data/logs/isaac_webviewer.log" 2>&1 &
+docker logs -f isaac-lab-nginx-1 >> "$PROJECT_ROOT/data/logs/isaac_nginx.log" 2>&1 &
 
 # Create status window
-tmux new-window -t $SESSION -n "status" "cd $SCRIPT_DIR && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:49100\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:49100 > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
+tmux new-window -t $SESSION -n "status" "cd $PROJECT_ROOT && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:49100\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:49100 > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
 
 # Attach to session
 echo ""
@@ -304,11 +305,11 @@ echo "  • ComfyUI:       http://localhost:8188"
 echo "  • Upload server: http://localhost:49100"
 echo ""
 echo "Application logs:"
-echo "  • $SCRIPT_DIR/data/logs/comfyui.log"
-echo "  • $SCRIPT_DIR/data/logs/upload.log"
-echo "  • $SCRIPT_DIR/data/logs/isaac_vscode.log"
-echo "  • $SCRIPT_DIR/data/logs/isaac_webviewer.log"
-echo "  • $SCRIPT_DIR/data/logs/isaac_nginx.log"
+echo "  • $PROJECT_ROOT/data/logs/comfyui.log"
+echo "  • $PROJECT_ROOT/data/logs/upload.log"
+echo "  • $PROJECT_ROOT/data/logs/isaac_vscode.log"
+echo "  • $PROJECT_ROOT/data/logs/isaac_webviewer.log"
+echo "  • $PROJECT_ROOT/data/logs/isaac_nginx.log"
 echo ""
 echo "Docker logs (persistent with rotation):"
 echo "  • docker logs vscode"

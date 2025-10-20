@@ -63,8 +63,8 @@ echo "Phase 1: Isaac Sim + Isaac Lab (Docker)"
 echo "=========================================="
 echo ""
 
-if [ -f "./scan2wall/scripts/install/isaac.sh" ]; then
-    bash ./scan2wall/scripts/install/isaac.sh $MINIMAL_INSTALL_FLAG
+if [ -f "./scripts/install/isaac.sh" ]; then
+    bash ./scripts/install/isaac.sh $MINIMAL_INSTALL_FLAG
 else
     echo -e "${RED}✗ Error: scripts/install/isaac.sh not found${NC}"
     exit 1
@@ -84,8 +84,8 @@ echo "Phase 2: ComfyUI (3D Generation)"
 echo "=========================================="
 echo ""
 
-if [ -f "./scan2wall/scripts/install/comfyui.sh" ]; then
-    bash ./scan2wall/scripts/install/comfyui.sh
+if [ -f "./scripts/install/comfyui.sh" ]; then
+    bash ./scripts/install/comfyui.sh
     
 
     echo ""
@@ -118,8 +118,8 @@ echo "Phase 3: scan2wall Package"
 echo "=========================================="
 echo ""
 
-if [ -f "./scan2wall/scripts/install/scan2wall.sh" ]; then
-    bash ./scan2wall/scripts/install/scan2wall.sh
+if [ -f "./scripts/install/scan2wall.sh" ]; then
+    bash ./scripts/install/scan2wall.sh
 else
     echo -e "${RED}✗ Error: scripts/install/scan2wall.sh not found${NC}"
     exit 1
@@ -209,7 +209,7 @@ echo "Quick Start:"
 echo "============"
 echo ""
 echo "Start all services with tmux:"
-echo "  ./start.sh auto"
+echo "  ./scripts/start.sh auto"
 echo ""
 echo "Or start manually in 3 terminals:"
 echo ""
@@ -221,7 +221,7 @@ echo "    python main.py --listen 0.0.0.0 --port 8188"
 echo ""
 echo "  Terminal 2 (Upload Server):"
 echo "    source .venv/bin/activate"
-echo "    python 3d_gen/image_collection/run.py"
+echo "    python -m scan2wall.server.run"
 echo ""
 echo "  Terminal 3 (Isaac Lab - for testing):"
 echo "    docker exec -it vscode bash"

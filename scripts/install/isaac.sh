@@ -26,7 +26,7 @@ if [ ! -t 0 ]; then
 fi
 
 # Installation directories (within project)
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ISAAC_DIR="$PROJECT_ROOT/isaac"
 ISAAC_LAUNCHABLE_DIR="$ISAAC_DIR/isaac-launchable"
 ISAAC_LAB_COMPOSE_DIR="$ISAAC_LAUNCHABLE_DIR/isaac-lab"

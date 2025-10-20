@@ -1,11 +1,7 @@
 from pathlib import Path
 import cv2
 import numpy as np
-import sys
-from pathlib import Path as PathLib
-# Add parent directory to path to import from 3d_gen
-sys.path.insert(0, str(PathLib(__file__).parent.parent))
-from material_properties.get_object_properties import get_object_properties
+from scan2wall.inference.get_object_properties import get_object_properties
 import requests
 import re
 import subprocess
@@ -181,9 +177,11 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     """
     # Configuration
     comfy_url = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
-    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "input"))
-    comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", Path(__file__).parent.parent / "ComfyUI" / "output"))
-    workflow_path = Path(__file__).parent.parent / "workflows" / "image-to-texture-mesh-api.json"
+    # Navigate to project root, then to 3d_gen/
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "input"))
+    comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "output"))
+    workflow_path = project_root / "3d_gen" / "workflows" / "image-to-texture-mesh-api.json"
 
     # Ensure directories exist
     comfy_input_dir.mkdir(parents=True, exist_ok=True)

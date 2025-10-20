@@ -3,16 +3,13 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any, List
 import imghdr
-from fastapi import FastAPI, File, UploadFile, Request, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Request, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi import HTTPException
 from PIL import Image
 import io
-import imghdr
-from fastapi import HTTPException
-from ml_pipeline import process_image
+from scan2wall.pipeline.coordinator import process_image
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "JOBS"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
