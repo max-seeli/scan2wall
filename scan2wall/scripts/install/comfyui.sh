@@ -65,10 +65,13 @@ cd ../
 CUSTOM_NODES=(
     "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes"
     "https://github.com/kijai/ComfyUI-KJNodes"
-    "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
     "https://github.com/huagetai/ComfyUI_LightGradient"
     "https://github.com/PozzettiAndrea/ComfyUI-MeshCraft"
+    "https://github.com/kijai/ComfyUI-Florence2"
+    "https://github.com/neverbiasu/ComfyUI-SAM2"
+    "https://github.com/rgthree/rgthree-comfy"
+    "https://github.com/kijai/ComfyUI-segment-anything-2"
 )
 
 for repo in "${CUSTOM_NODES[@]}"; do

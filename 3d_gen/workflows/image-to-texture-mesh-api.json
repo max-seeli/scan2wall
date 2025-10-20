@@ -476,7 +476,7 @@
         "158",
         0
       ],
-      "threshold": 0.2,
+      "threshold": 0.4,
       "sam_model": [
         "154",
         0
