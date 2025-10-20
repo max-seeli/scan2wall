@@ -12,7 +12,7 @@
       background: #f9f9f9;
     }
     .card {
-      max-width: 560px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 1.25rem;
       border: 1px solid #ddd;
@@ -114,16 +114,107 @@
       border-radius: 8px;
       margin-top: 1rem;
     }
+
+    /* Asset Grid */
+    #assetGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      min-height: 600px;
+    }
+
+    .asset-box {
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      padding: 1rem;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .asset-box h3 {
+      margin: 0 0 0.5rem;
+      font-size: 0.95rem;
+      color: #666;
+      text-align: center;
+    }
+
+    .asset-box.loading {
+      opacity: 0.5;
+    }
+
+    .asset-box.ready {
+      border-color: #4caf50;
+      background: #fff;
+    }
+
+    .asset-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .asset-content img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .viewer-3d {
+      width: 100%;
+      height: 100%;
+      min-height: 250px;
+    }
+
+    .properties-display {
+      width: 100%;
+      height: 100%;
+      text-align: left;
+      overflow-y: auto;
+      font-size: 0.85rem;
+    }
+
+    .properties-display dl {
+      margin: 0;
+    }
+
+    .properties-display dt {
+      font-weight: bold;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+
+    .properties-display dd {
+      margin: 0 0 0.25rem 1rem;
+      color: #333;
+    }
+
     #videoContainer {
       margin-top: 1.5rem;
       border-radius: 12px;
       overflow: hidden;
       background: #000;
     }
+
     #videoContainer video {
       width: 100%;
       height: auto;
       display: block;
+    }
+
+    @media (max-width: 768px) {
+      #assetGrid {
+        grid-template-columns: 1fr 1fr;
+        min-height: 500px;
+      }
     }
   </style>
 </head>
@@ -142,6 +233,36 @@
 
     <div id="progress" class="small" style="margin-top: 1rem;"></div>
 
+    <div id="assetGrid" class="hidden">
+      <div id="nobackgroundBox" class="asset-box loading">
+        <h3>No Background</h3>
+        <div class="asset-content">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+      <div id="decodedBox" class="asset-box loading">
+        <h3>Untextured 3D Mesh</h3>
+        <div class="asset-content">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+      <div id="glbBox" class="asset-box loading">
+        <h3>Textured 3D Mesh</h3>
+        <div class="asset-content">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+      <div id="propertiesBox" class="asset-box loading">
+        <h3>Physical Properties</h3>
+        <div class="asset-content">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="videoContainer" class="hidden"></div>
 
     <p class="small" style="margin-top: 1rem;">
@@ -149,10 +270,31 @@
     </p>
   </div>
 
-  <script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
     const fileInput = document.getElementById('file');
     const progress = document.getElementById('progress');
+    const assetGrid = document.getElementById('assetGrid');
     const videoContainer = document.getElementById('videoContainer');
+
+    let currentJobId = null;
+    let viewers = {
+      decoded: null,
+      glb: null
+    };
 
     // Validate file type before upload
     function isValidImageFile(file) {
@@ -172,6 +314,221 @@
       progress.innerHTML = `<div class="${type}">${message}</div>`;
     }
 
+    // Initialize 3D viewer for a box
+    function init3DViewer(boxId, isSTL = false) {
+      const box = document.getElementById(boxId);
+      const content = box.querySelector('.asset-content');
+      content.innerHTML = '';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'viewer-3d';
+      content.appendChild(canvas);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf5f5f5);
+
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+      camera.position.set(2, 2, 2);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+      canvas.appendChild(renderer.domElement);
+
+      if (isSTL) {
+        // Simpler lighting for STL
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+      } else {
+        // More dramatic lighting for textured GLB
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        // Key light (main light from upper right)
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        keyLight.position.set(3, 4, 2);
+        scene.add(keyLight);
+
+        // Fill light (softer light from left)
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        fillLight.position.set(-3, 2, 1);
+        scene.add(fillLight);
+
+        // Back light (rim light from behind)
+        const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        backLight.position.set(0, 2, -3);
+        scene.add(backLight);
+
+        // Hemisphere light for overall brightness
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+      }
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      });
+
+      return { scene, camera, renderer, controls };
+    }
+
+    // Load STL mesh
+    function loadSTL(jobId, boxId) {
+      const viewer = init3DViewer(boxId, true);
+      viewers.decoded = viewer;
+
+      const loader = new STLLoader();
+      loader.load(
+        `/asset/${jobId}/decoded`,
+        (geometry) => {
+          geometry.center();
+          const material = new THREE.MeshPhongMaterial({
+            color: 0x888888,
+            specular: 0x111111,
+            shininess: 200
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+
+          // Auto-scale to fit view
+          const box = new THREE.Box3().setFromObject(mesh);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const scale = 2 / maxDim;
+          mesh.scale.multiplyScalar(scale);
+
+          viewer.scene.add(mesh);
+
+          // Add edge lines for better visibility
+          const edges = new THREE.EdgesGeometry(geometry);
+          const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
+          const edgeLines = new THREE.LineSegments(edges, lineMaterial);
+          edgeLines.scale.multiplyScalar(scale);
+          viewer.scene.add(edgeLines);
+
+          document.getElementById(boxId).classList.remove('loading');
+          document.getElementById(boxId).classList.add('ready');
+        },
+        undefined,
+        (error) => {
+          console.error('Error loading STL:', error);
+        }
+      );
+    }
+
+    // Load GLB mesh
+    function loadGLB(jobId, boxId) {
+      const viewer = init3DViewer(boxId, false);
+      viewers.glb = viewer;
+
+      const loader = new GLTFLoader();
+      loader.load(
+        `/asset/${jobId}/glb`,
+        (gltf) => {
+          const model = gltf.scene;
+
+          // Auto-scale to fit view
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const scale = 2 / maxDim;
+          model.scale.multiplyScalar(scale);
+          model.position.sub(center.multiplyScalar(scale));
+
+          viewer.scene.add(model);
+          document.getElementById(boxId).classList.remove('loading');
+          document.getElementById(boxId).classList.add('ready');
+        },
+        undefined,
+        (error) => {
+          console.error('Error loading GLB:', error);
+        }
+      );
+    }
+
+    // Load no-background image
+    function loadNoBackground(jobId) {
+      const box = document.getElementById('nobackgroundBox');
+      const content = box.querySelector('.asset-content');
+      content.innerHTML = `<img src="/asset/${jobId}/nobackground" alt="No background">`;
+      box.classList.remove('loading');
+      box.classList.add('ready');
+    }
+
+    // Load and display properties
+    async function loadProperties(jobId) {
+      try {
+        const resp = await fetch(`/asset/${jobId}/properties`);
+        const props = await resp.json();
+
+        const box = document.getElementById('propertiesBox');
+        const content = box.querySelector('.asset-content');
+
+        let html = '<div class="properties-display"><dl>';
+
+        html += `<dt>Object Type</dt><dd>${props.object_type || 'N/A'}</dd>`;
+
+        if (props.materials && props.materials.length > 0) {
+          html += '<dt>Materials</dt>';
+          props.materials.forEach(mat => {
+            html += `<dd>${mat.name} (${(mat.prob * 100).toFixed(0)}%)</dd>`;
+          });
+        }
+
+        if (props.dimensions_m) {
+          html += '<dt>Dimensions (m)</dt>';
+          html += `<dd>L: ${props.dimensions_m.length?.value || 'N/A'}, `;
+          html += `W: ${props.dimensions_m.width?.value || 'N/A'}, `;
+          html += `H: ${props.dimensions_m.height?.value || 'N/A'}</dd>`;
+        }
+
+        if (props.weight_kg) {
+          html += `<dt>Weight</dt><dd>${props.weight_kg.value} kg</dd>`;
+        }
+
+        if (props.friction_coefficients) {
+          html += '<dt>Friction</dt>';
+          html += `<dd>Static: ${props.friction_coefficients.static}</dd>`;
+          html += `<dd>Dynamic: ${props.friction_coefficients.dynamic}</dd>`;
+        }
+
+        if (props.rigidity) {
+          html += `<dt>Rigidity</dt><dd>${props.rigidity}</dd>`;
+        }
+
+        if (props.confidence_overall) {
+          html += `<dt>Confidence</dt><dd>${(props.confidence_overall * 100).toFixed(0)}%</dd>`;
+        }
+
+        html += '</dl></div>';
+
+        content.innerHTML = html;
+        box.classList.remove('loading');
+        box.classList.add('ready');
+      } catch (e) {
+        console.error('Error loading properties:', e);
+      }
+    }
+
     // Show video player
     function showVideo(jobId) {
       videoContainer.classList.remove('hidden');
@@ -183,7 +540,7 @@
       `;
     }
 
-    // Poll job status
+    // Poll job status and update assets progressively
     async function pollJobStatus(jobId) {
       try {
         const resp = await fetch(`/job/${jobId}`);
@@ -193,9 +550,55 @@
           showStatus('<div class="spinner"></div>' + (data.status_detail || 'Queued for processing...'), 'info');
         } else if (data.status === 'processing') {
           showStatus('<div class="spinner"></div>' + (data.status_detail || 'Processing...'), 'info');
+
+          // Show asset grid once processing starts
+          if (assetGrid.classList.contains('hidden')) {
+            assetGrid.classList.remove('hidden');
+          }
+
+          // Load assets as they become available
+          if (data.assets.nobackground_ready && document.getElementById('nobackgroundBox').classList.contains('loading')) {
+            loadNoBackground(jobId);
+          }
+
+          if (data.assets.decoded_ready && document.getElementById('decodedBox').classList.contains('loading')) {
+            loadSTL(jobId, 'decodedBox');
+          }
+
+          if (data.assets.glb_ready && document.getElementById('glbBox').classList.contains('loading')) {
+            loadGLB(jobId, 'glbBox');
+          }
+
+          if (data.assets.properties_ready && document.getElementById('propertiesBox').classList.contains('loading')) {
+            loadProperties(jobId);
+          }
+
+          // Show video if ready during processing
+          if (data.assets.video_ready && videoContainer.classList.contains('hidden')) {
+            showVideo(jobId);
+          }
         } else if (data.status === 'done') {
           showStatus('✅ ' + (data.status_detail || 'Complete! Your simulation has been generated.'), 'success');
-          showVideo(jobId);  // Display the video
+
+          // Load any remaining assets
+          if (data.assets.nobackground_ready && document.getElementById('nobackgroundBox').classList.contains('loading')) {
+            loadNoBackground(jobId);
+          }
+          if (data.assets.decoded_ready && document.getElementById('decodedBox').classList.contains('loading')) {
+            loadSTL(jobId, 'decodedBox');
+          }
+          if (data.assets.glb_ready && document.getElementById('glbBox').classList.contains('loading')) {
+            loadGLB(jobId, 'glbBox');
+          }
+          if (data.assets.properties_ready && document.getElementById('propertiesBox').classList.contains('loading')) {
+            loadProperties(jobId);
+          }
+
+          // Show video
+          if (data.assets.video_ready) {
+            showVideo(jobId);
+          }
+
           return true; // done
         } else if (data.status === 'error') {
           showStatus('❌ ' + (data.status_detail || data.error || 'Unknown error'), 'error');
@@ -237,6 +640,17 @@
 
         if (resp.status === 201) {
           showStatus('<div class="spinner"></div>Upload successful! Processing started...', 'success');
+          currentJobId = result.job_id;
+
+          // Reset asset grid
+          assetGrid.classList.add('hidden');
+          document.querySelectorAll('.asset-box').forEach(box => {
+            box.classList.remove('ready');
+            box.classList.add('loading');
+            const content = box.querySelector('.asset-content');
+            content.innerHTML = '<div class="spinner"></div>';
+          });
+          videoContainer.classList.add('hidden');
 
           // Start polling for job status
           if (result.job_id) {

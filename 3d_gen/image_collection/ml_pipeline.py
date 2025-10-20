@@ -103,9 +103,13 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     print("=" * 60)
 
     glb_path = generate_mesh_via_comfyui(img, job_id)
-    
+
     print(f"✓ 3D mesh generated: {glb_path}")
-    status.stop("✓ 3D mesh created successfully")
+    status.stop("✓ 3D mesh created successfully (all assets ready)")
+
+    # Update jobs dict to indicate assets are available
+    if jobs_dict and job_id in jobs_dict:
+        jobs_dict[job_id]["assets_generated"] = True
 
     # Initialize material properties with defaults
     mass = 1.0
@@ -122,8 +126,12 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
         props_file = Path(image_path) / "properties.json"
         with open(str(props_file), 'w') as f:
             json.dump(props, f, indent=2)
-        
+
         print(f"✓ Saved properties to {props_file}")
+
+        # Update jobs dict to indicate properties are available
+        if jobs_dict and job_id in jobs_dict:
+            jobs_dict[job_id]["properties_generated"] = True
 
         print(f"✓ Material properties: {props}")
         mass = props["weight_kg"]["value"]
@@ -313,11 +321,12 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
         r = requests.post("http://localhost:8090/run_simulation", json=payload, timeout=1800)
         r.raise_for_status()
         result = r.json()
-        
+
         # Get container path and convert to host path
-        container_video = result.get("video_path", f"{out_dir}/sim_run.mp4")
+        # Video should be saved as {job_id}_sim.mp4 in the job directory
+        container_video = result.get("video_path", f"{out_dir}/{job_id}_sim.mp4")
         host_video = container_video.replace("/workspace/s2w-data", "/home/ubuntu/scan2wall/data")
-        
+
         print(f"✅ Video ready: {host_video}")
         return host_video
     except Exception as e:

@@ -88,6 +88,18 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
 
     job = JOBS[job_id]
+    job_dir = UPLOAD_DIR / job_id
+
+    # Check availability of each asset
+    nobackground_ready = len(list(job_dir.glob(f"{job_id}_nobackground_*.png"))) > 0
+    decoded_ready = len(list(job_dir.glob(f"{job_id}_decoded_*.stl"))) > 0
+    glb_ready = (job_dir / f"{job_id}.glb").exists()
+    properties_ready = (job_dir / "properties.json").exists()
+
+    # Check video file in job directory
+    video_path = UPLOAD_DIR / job_id / f"{job_id}_sim.mp4"
+    video_ready = video_path.exists()
+
     return JSONResponse({
         "job_id": job["id"],
         "status": job["status"],
@@ -97,6 +109,13 @@ async def get_job_status(job_id: str):
         "processed_path": job.get("processed_path"),
         "video_filename": job.get("video_filename"),
         "error": job.get("error"),
+        "assets": {
+            "nobackground_ready": nobackground_ready,
+            "decoded_ready": decoded_ready,
+            "glb_ready": glb_ready,
+            "properties_ready": properties_ready,
+            "video_ready": video_ready
+        }
     })
 
 @app.get("/jobs")
@@ -117,7 +136,7 @@ async def get_video(job_id: str):
         raise HTTPException(status_code=400, detail="Job not yet complete")
 
     video_filename = f"{job_id}_sim.mp4"
-    video_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "recordings" / video_filename
+    video_path = UPLOAD_DIR / job_id / video_filename
 
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
@@ -126,6 +145,80 @@ async def get_video(job_id: str):
         path=str(video_path),
         media_type="video/mp4",
         filename=video_filename
+    )
+
+@app.get("/asset/{job_id}/nobackground")
+async def get_nobackground_image(job_id: str):
+    """Serve the image with background removed."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = UPLOAD_DIR / job_id
+    # Find the nobackground PNG file
+    nobackground_files = list(job_dir.glob(f"{job_id}_nobackground_*.png"))
+
+    if not nobackground_files:
+        raise HTTPException(status_code=404, detail="No-background image not yet available")
+
+    return FileResponse(
+        path=str(nobackground_files[0]),
+        media_type="image/png",
+        filename=f"{job_id}_nobackground.png"
+    )
+
+@app.get("/asset/{job_id}/decoded")
+async def get_decoded_mesh(job_id: str):
+    """Serve the untextured (decoded) STL mesh."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = UPLOAD_DIR / job_id
+    # Find the decoded STL file
+    decoded_files = list(job_dir.glob(f"{job_id}_decoded_*.stl"))
+
+    if not decoded_files:
+        raise HTTPException(status_code=404, detail="Decoded mesh not yet available")
+
+    return FileResponse(
+        path=str(decoded_files[0]),
+        media_type="application/octet-stream",
+        filename=f"{job_id}_decoded.stl"
+    )
+
+@app.get("/asset/{job_id}/glb")
+async def get_glb_mesh(job_id: str):
+    """Serve the textured GLB mesh."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = UPLOAD_DIR / job_id
+    glb_file = job_dir / f"{job_id}.glb"
+
+    if not glb_file.exists():
+        raise HTTPException(status_code=404, detail="GLB mesh not yet available")
+
+    return FileResponse(
+        path=str(glb_file),
+        media_type="model/gltf-binary",
+        filename=f"{job_id}.glb"
+    )
+
+@app.get("/asset/{job_id}/properties")
+async def get_properties(job_id: str):
+    """Serve the physical properties JSON."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = UPLOAD_DIR / job_id
+    properties_file = job_dir / "properties.json"
+
+    if not properties_file.exists():
+        raise HTTPException(status_code=404, detail="Properties not yet available")
+
+    return FileResponse(
+        path=str(properties_file),
+        media_type="application/json",
+        filename=f"{job_id}_properties.json"
     )
 
 def _run_pipeline(job_id: str, path: str) -> None:
@@ -137,8 +230,8 @@ def _run_pipeline(job_id: str, path: str) -> None:
         JOBS[job_id]["status_detail"] = "Complete! Simulation video generated."
         JOBS[job_id]["processed_path"] = out_path
 
-        # Store video path (convert container path to host path if needed)
-        video_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "recordings" / f"{job_id}_sim.mp4"
+        # Store video path in job directory
+        video_path = UPLOAD_DIR / job_id / f"{job_id}_sim.mp4"
         if video_path.exists():
             JOBS[job_id]["video_path"] = str(video_path)
             JOBS[job_id]["video_filename"] = f"{job_id}_sim.mp4"
