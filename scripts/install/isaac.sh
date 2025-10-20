@@ -194,7 +194,7 @@ services:
       context: ./vscode
       network: host
     volumes:
-      - '$PROJECT_ROOT/isaac/isaac_scripts:/workspace/s2w-scripts:rw'
+      - '$PROJECT_ROOT/src/scan2wall/simulation:/workspace/s2w-scripts:rw'
       - '$PROJECT_ROOT/data:/workspace/s2w-data:rw'
     ports:
       - "8080:8080"

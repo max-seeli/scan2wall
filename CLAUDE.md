@@ -193,7 +193,7 @@ recordings/sim_run.mp4
 - Retrieves GLB from output directory
 - Uses workflow: `3d_gen/workflows/image-to-texture-mesh.json`
 
-**5. Isaac Worker** (`isaac/isaac_scripts/isaac_worker.py`)
+**5. Isaac Worker** (`src/scan2wall/simulation/isaac_worker.py`)
 - Persistent FastAPI service running inside Docker `vscode` container
 - Listens on port 8090 (accessible from host)
 - Manages Isaac Lab's main Kit loop for GPU-accelerated physics
@@ -225,7 +225,7 @@ Path management is handled via environment variables in `.env` file:
 
 - **PROJECT_ROOT**: Auto-detected from repo structure
 - **ISAAC_WORKSPACE**: Isaac Lab path inside container (default: `/workspace/isaaclab`)
-- **ISAAC_SCRIPTS_DIR**: Location of isaac_worker.py and simulation scripts
+- **ISAAC_SCRIPTS_DIR**: Location of isaac_worker.py (default: `{PROJECT_ROOT}/src/scan2wall/simulation`)
 - **USD_OUTPUT_DIR**: Where converted USD meshes go (default: `/workspace/s2w-data/usd_files`)
 - **RECORDINGS_DIR**: Video output directory (default: `{PROJECT_ROOT}/data/recordings`)
 - **ASSETS_CSV**: Tracks generated objects (default: `{PROJECT_ROOT}/assets.csv`)
@@ -249,7 +249,7 @@ All paths support environment variable overrides via `.env` file.
 - Isaac Lab cloned to: `isaac/isaac-launchable/`
 - Docker Compose file: `isaac/isaac-launchable/isaac-lab/docker-compose.yml`
 - Container mounts:
-  - Host `/home/ubuntu/scan2wall/isaac/isaac_scripts` → Container `/workspace/s2w-scripts`
+  - Host `/home/ubuntu/scan2wall/src/scan2wall/simulation` → Container `/workspace/s2w-scripts`
   - Host `/home/ubuntu/scan2wall/data` → Container `/workspace/s2w-data`
   - Host `/home/ubuntu/scan2wall/isaac/usd_files` → Container `/workspace/usd_files`
 - Isaac Lab inside container at: `/workspace/isaaclab`
@@ -259,7 +259,7 @@ All paths support environment variable overrides via `.env` file.
 - `/home/ubuntu/scan2wall/data/reconstructed_geoms` → `/workspace/s2w-data/reconstructed_geoms`
 - `/home/ubuntu/scan2wall/data/usd_files` → `/workspace/s2w-data/usd_files`
 - `/home/ubuntu/scan2wall/data/recordings` → `/workspace/s2w-data/recordings`
-- `/home/ubuntu/scan2wall/isaac/isaac_scripts` → `/workspace/s2w-scripts`
+- `/home/ubuntu/scan2wall/src/scan2wall/simulation` → `/workspace/s2w-scripts`
 
 ## Important Technical Details
 
@@ -390,7 +390,7 @@ docker compose logs vscode  # View logs
 The source code is in `3d_gen/`. Imports now use direct relative imports within the `3d_gen/` directory structure (the `scan2wall` package import dependency has been removed). Key files:
 - `3d_gen/image_collection/` - Upload server and web UI
 - `3d_gen/material_properties/` - Gemini integration
-- `isaac/isaac_scripts/` - Isaac Sim integration scripts (isaac_worker.py)
+- `src/scan2wall/simulation/` - Isaac Sim integration (isaac_worker.py)
 - `3d_gen/workflows/` - ComfyUI workflow JSON files
 
 ## Tech Stack Summary

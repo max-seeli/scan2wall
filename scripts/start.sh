@@ -168,15 +168,32 @@ fi
 
 echo -e "${GREEN}✓${NC} ComfyUI venv found"
 
-# Check port availability
+# Check port availability (detects all usage: LISTEN + ESTABLISHED)
 check_port() {
     local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+    if lsof -Pi :$port -t >/dev/null 2>&1; then
         return 1  # Port is in use
     fi
     return 0  # Port is free
 }
 
+# Find next available port starting from a base
+find_free_port() {
+    local base_port=$1
+    local max_tries=${2:-10}
+
+    for ((i=0; i<max_tries; i++)); do
+        local port=$((base_port + i))
+        if check_port $port; then
+            echo $port
+            return 0
+        fi
+    done
+
+    return 1  # No free port found
+}
+
+# Check ComfyUI port
 if ! check_port 8188; then
     echo -e "${YELLOW}⚠ Port 8188 is already in use (ComfyUI)${NC}"
     echo "Kill existing process? (y/N)"
@@ -194,18 +211,32 @@ else
     echo -e "${GREEN}✓${NC} Port 8188 available"
 fi
 
+# Check upload server port (auto-find if 49100 is busy)
+UPLOAD_PORT=49100
 if ! check_port 49100; then
-    echo -e "${YELLOW}⚠ Port 49100 is already in use (Upload server)${NC}"
-    echo "Kill existing process? (y/N)"
-    read -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        lsof -ti:49100 | xargs kill -9 2>/dev/null || true
-        sleep 1
-        echo -e "${GREEN}✓${NC} Port 49100 freed"
-    else
-        echo "Please free port 49100 manually and try again"
+    # Get what's using the port
+    BLOCKING_PROCESS=$(lsof -Pi :49100 -t 2>/dev/null | head -1)
+    BLOCKING_NAME=$(ps -p $BLOCKING_PROCESS -o comm= 2>/dev/null || echo "unknown")
+
+    echo -e "${YELLOW}⚠ Port 49100 is in use by $BLOCKING_NAME (PID: $BLOCKING_PROCESS)${NC}"
+    echo "Finding next available port..."
+
+    UPLOAD_PORT=$(find_free_port 49101)
+    if [ -z "$UPLOAD_PORT" ]; then
+        echo -e "${RED}✗ Could not find free port in range 49101-49110${NC}"
         exit 1
+    fi
+
+    echo -e "${GREEN}✓${NC} Using port $UPLOAD_PORT instead"
+
+    # Update .env with new port
+    if [ -f ".env" ]; then
+        if grep -q "^PORT=" ".env"; then
+            sed -i "s/^PORT=.*/PORT=$UPLOAD_PORT/" ".env"
+        else
+            echo "PORT=$UPLOAD_PORT" >> ".env"
+        fi
+        echo -e "${GREEN}✓${NC} Updated .env with PORT=$UPLOAD_PORT"
     fi
 else
     echo -e "${GREEN}✓${NC} Port 49100 available"
@@ -282,7 +313,7 @@ fi
 
 echo "Starting upload server..."
 # Create new window for upload server (with logging)
-tmux new-window -t $SESSION -n "upload" "cd $PROJECT_ROOT && source .venv/bin/activate && python -m scan2wall.server.run 2>&1 | tee $PROJECT_ROOT/data/logs/upload.log"
+tmux new-window -t $SESSION -n "upload" "cd $PROJECT_ROOT && source .venv/bin/activate && PORT=$UPLOAD_PORT python -m scan2wall.server.run 2>&1 | tee $PROJECT_ROOT/data/logs/upload.log"
 
 # Wait a moment for upload server to start
 sleep 3
@@ -294,7 +325,7 @@ docker logs -f web-viewer >> "$PROJECT_ROOT/data/logs/isaac_webviewer.log" 2>&1 
 docker logs -f isaac-lab-nginx-1 >> "$PROJECT_ROOT/data/logs/isaac_nginx.log" 2>&1 &
 
 # Create status window
-tmux new-window -t $SESSION -n "status" "cd $PROJECT_ROOT && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:49100\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:49100 > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
+tmux new-window -t $SESSION -n "status" "cd $PROJECT_ROOT && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:$UPLOAD_PORT\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:$UPLOAD_PORT > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
 
 # Attach to session
 echo ""
@@ -302,7 +333,7 @@ echo -e "${GREEN}✓${NC} Services started in tmux"
 echo ""
 echo "Services:"
 echo "  • ComfyUI:       http://localhost:8188"
-echo "  • Upload server: http://localhost:49100"
+echo "  • Upload server: http://localhost:$UPLOAD_PORT"
 echo ""
 echo "Application logs:"
 echo "  • $PROJECT_ROOT/data/logs/comfyui.log"

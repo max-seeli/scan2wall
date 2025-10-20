@@ -109,8 +109,93 @@ echo "   Some custom nodes require opencv-contrib-python (includes extra modules
 echo "   while others specify opencv-python (basic version)."
 echo "   Installing opencv-contrib-python which satisfies both requirements..."
 uv pip uninstall opencv-python opencv-python-headless 2>/dev/null || true
-uv pip install opencv-contrib-python
-echo "   ✅ OpenCV configured with contrib modules"
+# Pin to 4.10.0.84 - version 4.12.x is broken (missing cv2.__init__.py, breaks MeshCraft)
+uv pip install opencv-contrib-python==4.10.0.84
+echo "   ✅ OpenCV configured with contrib modules (pinned to 4.10.0.84)"
+
+echo ""
+echo "🔧 Checking C++ compiler (required for CUDA extensions)..."
+
+# Test if g++ can actually compile (not just if command exists)
+test_cpp_compilation() {
+    # Create a simple test program
+    cat > /tmp/test_gcc.cpp << 'EOF'
+#include <iostream>
+int main() { std::cout << "test"; return 0; }
+EOF
+
+    # Try to compile it
+    if g++ /tmp/test_gcc.cpp -o /tmp/test_gcc &> /dev/null; then
+        rm -f /tmp/test_gcc.cpp /tmp/test_gcc
+        return 0
+    else
+        rm -f /tmp/test_gcc.cpp /tmp/test_gcc
+        return 1
+    fi
+}
+
+# Find all installed gcc versions and check for corresponding g++
+NEEDS_INSTALL=false
+MISSING_GPP_VERSIONS=()
+
+# Check for gcc versions (11, 12, etc.)
+for gcc_bin in /usr/bin/gcc-[0-9]*; do
+    if [ -x "$gcc_bin" ]; then
+        VERSION=$(basename "$gcc_bin" | sed 's/gcc-//')
+        if [ ! -x "/usr/bin/g++-$VERSION" ]; then
+            echo "⚠️  Found gcc-$VERSION but missing g++-$VERSION"
+            MISSING_GPP_VERSIONS+=("$VERSION")
+            NEEDS_INSTALL=true
+        fi
+    fi
+done
+
+# Check if g++ exists and can compile
+if command -v g++ &> /dev/null && test_cpp_compilation && [ "$NEEDS_INSTALL" = false ]; then
+    echo "✅ C++ compiler working: $(g++ --version | head -n1)"
+else
+    if [ "$NEEDS_INSTALL" = true ]; then
+        echo "⚠️  C++ toolchain incomplete (missing g++ for some gcc versions)"
+    elif command -v g++ &> /dev/null; then
+        echo "⚠️  C++ compiler found but broken (compilation test failed)"
+    else
+        echo "⚠️  C++ compiler (g++) not found"
+    fi
+    echo "   This is required to compile CUDA extensions"
+    echo ""
+    echo "📥 Installing/reinstalling C++ compiler toolchain..."
+
+    # Build install command with all needed g++ versions
+    INSTALL_PKGS="build-essential g++"
+    for ver in "${MISSING_GPP_VERSIONS[@]}"; do
+        INSTALL_PKGS="$INSTALL_PKGS g++-$ver"
+    done
+
+    if sudo apt-get update -qq && sudo apt-get install --reinstall -y $INSTALL_PKGS > /dev/null 2>&1; then
+        echo "✅ C++ toolchain installed successfully"
+
+        # Test compilation again
+        if command -v g++ &> /dev/null && test_cpp_compilation; then
+            echo "✅ C++ compiler now working: $(g++ --version | head -n1)"
+        else
+            echo "⚠️  C++ compiler still not working after installation"
+            echo "   You may need to restart your shell or manually fix the installation"
+            echo ""
+            echo "   Skipping CUDA extension building..."
+            SKIP_CUDA_EXTENSIONS=true
+        fi
+    else
+        echo "❌ Failed to install C++ toolchain"
+        echo ""
+        echo "⚠️  WARNING: Cannot build custom CUDA extensions without C++ compiler"
+        echo "   Please install manually with:"
+        echo "   sudo apt-get update && sudo apt-get install --reinstall -y $INSTALL_PKGS"
+        echo ""
+        echo "   Skipping CUDA extension building..."
+        # Set flag to skip extension building
+        SKIP_CUDA_EXTENSIONS=true
+    fi
+fi
 
 echo ""
 echo "🔧 Setting up CUDA Toolkit for building extensions..."

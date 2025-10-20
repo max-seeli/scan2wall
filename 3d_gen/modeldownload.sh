@@ -27,8 +27,8 @@ uv pip install comfy-cli
 # Navigate to ComfyUI directory
 cd ComfyUI
 
-# Download DIT model
-comfy --here model download \
+# Download DIT model (auto-respond 'n' to tracking prompt)
+echo "n" | comfy --here model download \
   --url "https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt" \
   --relative-path models/diffusion_models \
   --filename hunyuan3d-dit-v2-1-fp16.ckpt

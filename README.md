@@ -16,7 +16,7 @@ A hackathon project for NVIDIA's Simulation Hack that combines phone camera capt
 4. 🎮 Object gets thrown at a pyramid in Isaac Sim
 5. 🎬 Watch the simulation video
 
-**Total time: ~1-2 minutes**
+**Total time: ~1 minute!**
 
 ## Tech Stack
 
@@ -31,83 +31,49 @@ A hackathon project for NVIDIA's Simulation Hack that combines phone camera capt
 ### Prerequisites
 
 - **Linux** with NVIDIA GPU (16GB+ VRAM recommended)
-- **CUDA** toolkit installed
-- **50GB+ free disk space** for models and Isaac Lab
+- **70GB+ free disk space** for models and Isaac Lab
+- **24GB+ of VRAM** for ComfyUI with MeshCraft
 
 ### Installation
 
-**One-line install (recommended):**
+**Install**
 ```bash
 git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
-./setup.sh --minimal
+./scripts/setup.sh
 ```
-
-This installs everything you need in 20-25 minutes.
-
-**Or full install with RL/ML frameworks:**
-```bash
-./setup.sh
-```
-Takes 30-40 minutes, installs ~5GB of extra dependencies (not needed for scan2wall).
-
-See [MINIMAL_ISAAC_INSTALL.md](MINIMAL_ISAAC_INSTALL.md) for details on what's installed.
-
-### Configuration
-
-```bash
-cp .env.example .env
-```
+You will be asked for a Gemini API Key during setup!
+You can also skip adding it during setup and add it later;
 
 Edit `.env` and add your Gemini API key:
 - **Required**: `GOOGLE_API_KEY` - Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
-- Everything else is pre-configured for single-machine setup!
 
 ### Running
 
-**Option 1: Automated (with tmux)**
 ```bash
-./start.sh auto
+./scripts/start.sh
 ```
 This opens tmux windows automatically. Use `Ctrl+B` then number keys to switch between them.
+ComfyUI will be on port 8188, upload server on port 49100.
 
-**Option 2: Manual (2 separate terminals)**
-```bash
-./start.sh
-```
-This prints commands to run in 2 separate terminal windows:
-- Terminal 1: ComfyUI backend
-- Terminal 2: Upload server
-
-Once started, scan the QR code or visit the URL on your phone to upload photos!
+Once started, visit the URL to upload photos!
 
 ## Features
 
-✅ Mobile-first web interface
 ✅ Real-time job status updates
 ✅ AI-powered material inference (mass, friction, dimensions)
-✅ State-of-the-art 3D generation
+✅ State-of-the-art 3D mesh+texture generation
 ✅ Realistic physics simulation
-✅ Automatic video recording
+✅ Automatic video recording from Isaac
 
 ## Documentation
 
 - **[SETUP.md](SETUP.md)** - Detailed installation guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and technical details
-- **[EMAIL_INTEGRATION.md](EMAIL_INTEGRATION.md)** - Future email feature design
+- TOUPDATE
 
 ## Project Structure
 
-```
-scan2wall/
-├── 3d_gen/
-│   ├── image_collection/    # Upload server and web UI
-│   ├── material_properties/ # Gemini API integration
-│   ├── utils/               # Path configuration
-│   └── ComfyUI/             # 3D generation backend
-├── isaac_scripts/           # Isaac Sim simulation scripts
-└── recordings/              # Generated videos
-```
+TOUPDATE
 
 ## API Endpoints
 
@@ -116,27 +82,13 @@ scan2wall/
 - `GET /job/{job_id}` - Check job status
 - `GET /jobs` - List all jobs (admin)
 
-## Troubleshooting
-
-**Can't connect from phone?**
-- Ensure same WiFi network
-- Check firewall allows the port
-
-**ComfyUI model not found?**
-- Re-run `modeldownload.sh`
-
-**Isaac Sim crashes?**
-- Check VRAM usage
-- Reduce simulation resolution
-
-See [SETUP.md](SETUP.md) for more troubleshooting.
+TOUPDATE^
 
 ## Future Ideas
 
-- 📧 Email integration
-- 🎨 Custom simulation settings
-- 🌐 Public gallery
-- 🔗 Social media sharing
+- Trebuchet minigame
+- Sliding down a plane minigame
+- Segmentation of 3D reconstruction
 
 ## Built For
 
@@ -147,13 +99,20 @@ This project showcases the integration of multiple cutting-edge AI and physics s
 - Google's Gemini 2.0 Flash for intelligent material property inference
 - NVIDIA's Isaac Sim for high-fidelity physics simulation
 
+Made by:
+
+Andrea Pozzetti
+Max Seeliger
+Patrick Styll
+Volgt
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 
-Special thanks to NVIDIA for hosting the Simulation Hack and providing Isaac Sim access!
+Thank you to Jua, Flexion Robotics and NVIDIA for the Hackathon!
 
 ## Contact
 

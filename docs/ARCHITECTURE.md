@@ -177,7 +177,7 @@ Extracts:
 
 ### Isaac Sim Integration
 
-**Location**: `isaac_scripts/test_place_obj_video.py`
+**Location**: `src/scan2wall/simulation/isaac_worker.py`
 
 **Scene Elements**:
 - Ground plane
@@ -230,9 +230,8 @@ scan2wall/
 │   ├── server.py                      # ComfyUI HTTP API
 │   └── setup_comfyui.sh               # Setup script
 │
-├── isaac_scripts/
-│   ├── convert_mesh.py                # GLB → USD converter
-│   └── test_place_obj_video.py        # Simulation + recording
+├── src/scan2wall/simulation/
+│   └── isaac_worker.py                # FastAPI worker for mesh conversion + simulation
 │
 └── recordings/                        # Output videos
 ```
@@ -283,7 +282,7 @@ All paths are **auto-detected** from the project structure by default. Set these
 |----------|---------|---------|
 | `PROJECT_ROOT` | Project root directory | Auto-detected |
 | `ISAAC_WORKSPACE` | Isaac Lab workspace | /workspace/isaaclab |
-| `ISAAC_SCRIPTS_DIR` | Isaac scripts location | ${PROJECT_ROOT}/isaac_scripts |
+| `ISAAC_SCRIPTS_DIR` | Isaac scripts location | ${PROJECT_ROOT}/src/scan2wall/simulation |
 | `ASSETS_CSV` | Assets tracking file | ${PROJECT_ROOT}/assets.csv |
 | `RECORDINGS_DIR` | Video output directory | ${PROJECT_ROOT}/recordings |
 | `USD_OUTPUT_DIR` | USD mesh output directory | ${ISAAC_WORKSPACE} |
