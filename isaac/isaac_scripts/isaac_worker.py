@@ -93,16 +93,29 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
         print("[WARN] No frames to encode.")
         return
     digits = len(os.path.basename(pattern[0]).split("_")[1].split(".")[0])
+
+    # Add watermark with ffmpeg drawtext filter
+    watermark_filter = (
+        "drawtext=text='powered by scan2wall.com':"
+        "fontsize=24:"
+        "fontcolor=white@0.8:"
+        "x=w-tw-20:"
+        "y=h-th-20:"
+        "shadowcolor=black@0.6:"
+        "shadowx=2:shadowy=2"
+    )
+
     cmd = [
         ffmpeg, "-y", "-framerate", str(fps),
         "-start_number", str(skip_first),
         "-pattern_type", "sequence",
         "-i", os.path.join(frames_dir, f"rgb_%0{digits}d.png"),
+        "-vf", watermark_filter,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-movflags", "+faststart", out_path
     ]
     subprocess.run(cmd, check=True)
-    print(f"[INFO] MP4 saved → {out_path}")
+    print(f"[INFO] MP4 with watermark saved → {out_path}")
 
 # HTTP server
 from http.server import HTTPServer, BaseHTTPRequestHandler

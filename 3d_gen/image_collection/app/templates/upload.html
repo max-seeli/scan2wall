@@ -3,13 +3,28 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Phone → Python Image Drop</title>
+  <title>scan2wall</title>
   <style>
     * { box-sizing: border-box; }
     body {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       margin: 1.25rem;
       background: #f9f9f9;
+      background-image: url('/static/wall.jpg');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(249, 249, 249, 0.85);
+      z-index: -1;
     }
     .card {
       max-width: 1200px;
@@ -22,8 +37,19 @@
       overflow: hidden;
     }
     h1 {
-      font-size: 1.25rem;
-      margin: 0 0 0.75rem;
+      font-size: 2rem;
+      margin: 0 0 0.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .tagline {
+      font-size: 1.1rem;
+      color: #555;
+      margin: 0 0 1.5rem;
+      font-weight: 500;
     }
     p {
       color: #333;
@@ -210,32 +236,178 @@
       display: block;
     }
 
+    /* Upload section with thumbnail */
+    .upload-section {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+
+    .upload-form-container {
+      flex: 1;
+    }
+
+    .thumbnail-container {
+      width: 180px;
+      min-width: 180px;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      padding: 0.75rem;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .thumbnail-container.hidden {
+      display: none;
+    }
+
+    .thumbnail-container h4 {
+      margin: 0 0 0.5rem;
+      font-size: 0.85rem;
+      color: #666;
+      text-align: center;
+    }
+
+    .thumbnail-container img {
+      max-width: 100%;
+      max-height: 150px;
+      object-fit: contain;
+      border-radius: 6px;
+    }
+
+    /* Download buttons */
+    .download-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .download-btn:hover {
+      background: #fff;
+      transform: scale(1.1);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+    }
+
+    .download-btn.hidden {
+      display: none;
+    }
+
+    #videoDownloadBtn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+    }
+
     @media (max-width: 768px) {
       #assetGrid {
         grid-template-columns: 1fr 1fr;
         min-height: 500px;
       }
+
+      .upload-section {
+        flex-direction: column;
+      }
+
+      .thumbnail-container {
+        width: 100%;
+      }
+    }
+
+    /* Footer */
+    .footer {
+      max-width: 1200px;
+      margin: 1.5rem auto 0;
+      padding: 1.5rem;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      text-align: center;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .footer-section {
+      margin-bottom: 1rem;
+    }
+    .footer-section:last-child {
+      margin-bottom: 0;
+    }
+    .footer-section strong {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #333;
+      font-size: 0.95rem;
+    }
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer a:hover {
+      color: #764ba2;
+      text-decoration: underline;
+    }
+    .tech-stack {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    .tech-badge {
+      padding: 0.25rem 0.75rem;
+      background: #f0f0f0;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      color: #555;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Send a photo to Python</h1>
-    <p>Tap the box below to open your camera. Upload starts automatically after you take a photo.</p>
+    <h1>scan2wall</h1>
+    <p class="tagline">Upload a photo of an object and see it being thrown against a wall!</p>
+    <p class="small" style="color: #888; margin-bottom: 1.5rem;">Tap the box below to open your camera. Upload starts automatically.</p>
 
-    <form id="form" method="post" action="/upload" enctype="multipart/form-data">
-      <input id="file" class="hidden" type="file" name="file" accept="image/*" capture="environment">
-      <label class="cta" for="file">
-        📷 <strong>Take or choose a photo</strong>
-        <span class="small">Camera opens directly • Auto-upload on selection</span>
-      </label>
-    </form>
+    <div class="upload-section">
+      <div class="upload-form-container">
+        <form id="form" method="post" action="/upload" enctype="multipart/form-data">
+          <input id="file" class="hidden" type="file" name="file" accept="image/*" capture="environment">
+          <label class="cta" for="file">
+            📷 <strong>Take or choose a photo</strong>
+            <span class="small">Camera opens directly • Auto-upload on selection</span>
+          </label>
+        </form>
+      </div>
+
+      <div id="thumbnailContainer" class="thumbnail-container hidden">
+        <h4>Your Photo</h4>
+        <img id="thumbnailImage" src="" alt="Uploaded photo">
+      </div>
+    </div>
 
     <div id="progress" class="small" style="margin-top: 1rem;"></div>
 
     <div id="assetGrid" class="hidden">
       <div id="nobackgroundBox" class="asset-box loading">
         <h3>No Background</h3>
+        <button class="download-btn hidden" id="downloadNoBackground" title="Download PNG">⬇</button>
         <div class="asset-content">
           <div class="spinner"></div>
         </div>
@@ -243,6 +415,7 @@
 
       <div id="decodedBox" class="asset-box loading">
         <h3>Untextured 3D Mesh</h3>
+        <button class="download-btn hidden" id="downloadDecoded" title="Download STL">⬇</button>
         <div class="asset-content">
           <div class="spinner"></div>
         </div>
@@ -250,6 +423,7 @@
 
       <div id="glbBox" class="asset-box loading">
         <h3>Textured 3D Mesh</h3>
+        <button class="download-btn hidden" id="downloadGlb" title="Download GLB">⬇</button>
         <div class="asset-content">
           <div class="spinner"></div>
         </div>
@@ -257,17 +431,37 @@
 
       <div id="propertiesBox" class="asset-box loading">
         <h3>Physical Properties</h3>
+        <button class="download-btn hidden" id="downloadProperties" title="Download JSON">⬇</button>
         <div class="asset-content">
           <div class="spinner"></div>
         </div>
       </div>
     </div>
 
-    <div id="videoContainer" class="hidden"></div>
+    <div id="videoContainer" class="hidden" style="position: relative;">
+      <button class="download-btn hidden" id="videoDownloadBtn" title="Download Video">⬇</button>
+    </div>
 
     <p class="small" style="margin-top: 1rem;">
       Tip: Add this page to your home screen for a one-tap workflow.
     </p>
+  </div>
+
+  <div class="footer">
+    <div class="footer-section">
+      <strong>Open Source Project</strong>
+      <a href="https://github.com/max-seeli/scan2wall" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+    </div>
+
+    <div class="footer-section">
+      <strong>Built with amazing open source tools</strong>
+      <div class="tech-stack">
+        <a href="https://github.com/PozzettiAndrea/ComfyUI-MeshCraft" target="_blank" rel="noopener" class="tech-badge">ComfyUI-MeshCraft</a>
+        <span class="tech-badge">Hunyuan 3D 2.1</span>
+        <span class="tech-badge">NVIDIA Isaac Sim</span>
+        <span class="tech-badge">Google Gemini</span>
+      </div>
+    </div>
   </div>
 
   <script type="importmap">
@@ -289,12 +483,32 @@
     const progress = document.getElementById('progress');
     const assetGrid = document.getElementById('assetGrid');
     const videoContainer = document.getElementById('videoContainer');
+    const thumbnailContainer = document.getElementById('thumbnailContainer');
+    const thumbnailImage = document.getElementById('thumbnailImage');
 
     let currentJobId = null;
     let viewers = {
       decoded: null,
       glb: null
     };
+
+    // Download button handlers
+    function setupDownloadButton(buttonId, urlGenerator) {
+      const btn = document.getElementById(buttonId);
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentJobId) {
+          window.location.href = urlGenerator(currentJobId);
+        }
+      });
+    }
+
+    // Setup all download buttons
+    setupDownloadButton('downloadNoBackground', (id) => `/asset/${id}/nobackground?download=true`);
+    setupDownloadButton('downloadDecoded', (id) => `/asset/${id}/decoded?download=true`);
+    setupDownloadButton('downloadGlb', (id) => `/asset/${id}/glb?download=true`);
+    setupDownloadButton('downloadProperties', (id) => `/asset/${id}/properties?download=true`);
+    setupDownloadButton('videoDownloadBtn', (id) => `/video/${id}?download=true`);
 
     // Validate file type before upload
     function isValidImageFile(file) {
@@ -331,7 +545,7 @@
       camera.position.set(2, 2, 2);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
       canvas.appendChild(renderer.domElement);
 
       if (isSTL) {
@@ -372,21 +586,26 @@
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
 
+      // Responsive resize helper - checks on every frame
+      function resizeRendererToDisplaySize() {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        const needResize = renderer.domElement.width !== width || renderer.domElement.height !== height;
+        if (needResize) {
+          renderer.setSize(width, height, false);
+          camera.aspect = width / height;
+          camera.updateProjectionMatrix();
+        }
+        return needResize;
+      }
+
       function animate() {
         requestAnimationFrame(animate);
+        resizeRendererToDisplaySize();
         controls.update();
         renderer.render(scene, camera);
       }
       animate();
-
-      // Handle window resize
-      window.addEventListener('resize', () => {
-        const width = canvas.clientWidth;
-        const height = canvas.clientHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-      });
 
       return { scene, camera, renderer, controls };
     }
@@ -426,6 +645,7 @@
 
           document.getElementById(boxId).classList.remove('loading');
           document.getElementById(boxId).classList.add('ready');
+          document.getElementById('downloadDecoded').classList.remove('hidden');
         },
         undefined,
         (error) => {
@@ -457,6 +677,7 @@
           viewer.scene.add(model);
           document.getElementById(boxId).classList.remove('loading');
           document.getElementById(boxId).classList.add('ready');
+          document.getElementById('downloadGlb').classList.remove('hidden');
         },
         undefined,
         (error) => {
@@ -472,6 +693,7 @@
       content.innerHTML = `<img src="/asset/${jobId}/nobackground" alt="No background">`;
       box.classList.remove('loading');
       box.classList.add('ready');
+      document.getElementById('downloadNoBackground').classList.remove('hidden');
     }
 
     // Load and display properties
@@ -524,6 +746,7 @@
         content.innerHTML = html;
         box.classList.remove('loading');
         box.classList.add('ready');
+        document.getElementById('downloadProperties').classList.remove('hidden');
       } catch (e) {
         console.error('Error loading properties:', e);
       }
@@ -532,12 +755,16 @@
     // Show video player
     function showVideo(jobId) {
       videoContainer.classList.remove('hidden');
+      const downloadBtn = document.getElementById('videoDownloadBtn');
       videoContainer.innerHTML = `
         <video controls autoplay loop>
           <source src="/video/${jobId}" type="video/mp4">
           Your browser does not support the video tag.
         </video>
       `;
+      // Re-add download button after innerHTML wipe
+      videoContainer.appendChild(downloadBtn);
+      downloadBtn.classList.remove('hidden');
     }
 
     // Poll job status and update assets progressively
@@ -642,6 +869,10 @@
           showStatus('<div class="spinner"></div>Upload successful! Processing started...', 'success');
           currentJobId = result.job_id;
 
+          // Show thumbnail
+          thumbnailImage.src = `/asset/${result.job_id}/original`;
+          thumbnailContainer.classList.remove('hidden');
+
           // Reset asset grid
           assetGrid.classList.add('hidden');
           document.querySelectorAll('.asset-box').forEach(box => {
@@ -651,6 +882,9 @@
             content.innerHTML = '<div class="spinner"></div>';
           });
           videoContainer.classList.add('hidden');
+
+          // Hide all download buttons
+          document.querySelectorAll('.download-btn').forEach(btn => btn.classList.add('hidden'));
 
           // Start polling for job status
           if (result.job_id) {

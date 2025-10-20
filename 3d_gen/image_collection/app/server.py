@@ -6,6 +6,7 @@ import imghdr
 from fastapi import FastAPI, File, UploadFile, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from fastapi import HTTPException
 from PIL import Image
 import io
@@ -16,8 +17,13 @@ from ml_pipeline import process_image
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "JOBS"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Scan2Mesh")
+app = FastAPI(title="scan2wall")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+# Mount static files directory
+static_dir = Path(__file__).resolve().parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 JOBS: Dict[str, Dict[str, Any]] = {}
 
@@ -124,7 +130,7 @@ async def list_jobs():
     return JSONResponse({"jobs": list(JOBS.values())})
 
 @app.get("/video/{job_id}")
-async def get_video(job_id: str):
+async def get_video(job_id: str, download: bool = False):
     """Serve the simulation video for a completed job."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -141,14 +147,37 @@ async def get_video(job_id: str):
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
 
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={video_filename}"
+
     return FileResponse(
         path=str(video_path),
         media_type="video/mp4",
-        filename=video_filename
+        filename=video_filename,
+        headers=headers
+    )
+
+@app.get("/asset/{job_id}/original")
+async def get_original_image(job_id: str):
+    """Serve the original uploaded image."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = JOBS[job_id]
+    image_path = Path(job["path"])
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Original image not found")
+
+    return FileResponse(
+        path=str(image_path),
+        media_type="image/jpeg",
+        filename=f"{job_id}_original{image_path.suffix}"
     )
 
 @app.get("/asset/{job_id}/nobackground")
-async def get_nobackground_image(job_id: str):
+async def get_nobackground_image(job_id: str, download: bool = False):
     """Serve the image with background removed."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -160,14 +189,19 @@ async def get_nobackground_image(job_id: str):
     if not nobackground_files:
         raise HTTPException(status_code=404, detail="No-background image not yet available")
 
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={job_id}_nobackground.png"
+
     return FileResponse(
         path=str(nobackground_files[0]),
         media_type="image/png",
-        filename=f"{job_id}_nobackground.png"
+        filename=f"{job_id}_nobackground.png",
+        headers=headers
     )
 
 @app.get("/asset/{job_id}/decoded")
-async def get_decoded_mesh(job_id: str):
+async def get_decoded_mesh(job_id: str, download: bool = False):
     """Serve the untextured (decoded) STL mesh."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -179,14 +213,19 @@ async def get_decoded_mesh(job_id: str):
     if not decoded_files:
         raise HTTPException(status_code=404, detail="Decoded mesh not yet available")
 
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={job_id}_decoded.stl"
+
     return FileResponse(
         path=str(decoded_files[0]),
         media_type="application/octet-stream",
-        filename=f"{job_id}_decoded.stl"
+        filename=f"{job_id}_decoded.stl",
+        headers=headers
     )
 
 @app.get("/asset/{job_id}/glb")
-async def get_glb_mesh(job_id: str):
+async def get_glb_mesh(job_id: str, download: bool = False):
     """Serve the textured GLB mesh."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -197,14 +236,19 @@ async def get_glb_mesh(job_id: str):
     if not glb_file.exists():
         raise HTTPException(status_code=404, detail="GLB mesh not yet available")
 
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={job_id}.glb"
+
     return FileResponse(
         path=str(glb_file),
         media_type="model/gltf-binary",
-        filename=f"{job_id}.glb"
+        filename=f"{job_id}.glb",
+        headers=headers
     )
 
 @app.get("/asset/{job_id}/properties")
-async def get_properties(job_id: str):
+async def get_properties(job_id: str, download: bool = False):
     """Serve the physical properties JSON."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -215,10 +259,15 @@ async def get_properties(job_id: str):
     if not properties_file.exists():
         raise HTTPException(status_code=404, detail="Properties not yet available")
 
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={job_id}_properties.json"
+
     return FileResponse(
         path=str(properties_file),
         media_type="application/json",
-        filename=f"{job_id}_properties.json"
+        filename=f"{job_id}_properties.json",
+        headers=headers
     )
 
 def _run_pipeline(job_id: str, path: str) -> None:
