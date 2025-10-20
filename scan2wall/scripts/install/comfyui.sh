@@ -128,6 +128,23 @@ cd "$THREEGEN_DIR"
 # No more copy-paste! Everything is now in ComfyUI-MeshCraft
 
 echo ""
+echo "🎨 Installing Blender (required for MeshCraft UV unwrapping)..."
+if command -v blender &> /dev/null; then
+    echo "✅ Blender already installed: $(blender --version | head -n1)"
+else
+    echo "📥 Installing Blender via snap..."
+    sudo snap install blender --classic
+
+    # Verify installation
+    if command -v blender &> /dev/null; then
+        echo "✅ Blender installed successfully: $(blender --version | head -n1)"
+    else
+        echo "⚠️  Blender installation failed. MeshCraft UV unwrapping may not work."
+        echo "   Please install Blender manually: sudo snap install blender --classic"
+    fi
+fi
+
+echo ""
 echo "📦 Installing final dependencies..."
 uv pip install transformers==4.46.3
 uv pip install pynanoinstantmeshes
