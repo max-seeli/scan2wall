@@ -202,13 +202,13 @@ async def get_nobackground_image(job_id: str, download: bool = False):
 
 @app.get("/asset/{job_id}/decoded")
 async def get_decoded_mesh(job_id: str, download: bool = False):
-    """Serve the untextured (decoded) STL mesh."""
+    """Serve the untextured (processed) STL mesh."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
 
     job_dir = UPLOAD_DIR / job_id
-    # Find the decoded STL file
-    decoded_files = list(job_dir.glob(f"{job_id}_decoded_*.stl"))
+    # Find the processed STL file
+    decoded_files = list(job_dir.glob(f"{job_id}_processed_*.stl"))
 
     if not decoded_files:
         raise HTTPException(status_code=404, detail="Decoded mesh not yet available")

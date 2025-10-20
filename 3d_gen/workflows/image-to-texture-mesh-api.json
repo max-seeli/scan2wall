@@ -541,10 +541,10 @@
   },
   "165": {
     "inputs": {
-      "remove_floaters": false,
-      "remove_degenerate_faces": false,
-      "reduce_faces": false,
-      "max_facenum": 40000,
+      "remove_floaters": true,
+      "remove_degenerate_faces": true,
+      "reduce_faces": true,
+      "max_facenum": 100000,
       "smooth_normals": true,
       "smooth_surface": true,
       "trimesh": [

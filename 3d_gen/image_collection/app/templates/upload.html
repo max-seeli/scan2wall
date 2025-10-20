@@ -104,6 +104,15 @@
     button:hover {
       background: #f5f5f5;
     }
+    .loading-text {
+      color: #999;
+      font-size: 0.9rem;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
     .spinner {
       border: 3px solid #f3f3f3;
       border-top: 3px solid #555;
@@ -145,10 +154,10 @@
     #assetGrid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
       gap: 1rem;
       margin-top: 1.5rem;
-      min-height: 600px;
+      min-height: 800px;
     }
 
     .asset-box {
@@ -162,6 +171,10 @@
       justify-content: center;
       position: relative;
       overflow: hidden;
+    }
+
+    #videoBox {
+      grid-column: span 2;
     }
 
     .asset-box h3 {
@@ -409,7 +422,7 @@
         <h3>No Background</h3>
         <button class="download-btn hidden" id="downloadNoBackground" title="Download PNG">⬇</button>
         <div class="asset-content">
-          <div class="spinner"></div>
+          <div class="loading-text">Processing...</div>
         </div>
       </div>
 
@@ -417,7 +430,7 @@
         <h3>Untextured 3D Mesh</h3>
         <button class="download-btn hidden" id="downloadDecoded" title="Download STL">⬇</button>
         <div class="asset-content">
-          <div class="spinner"></div>
+          <div class="loading-text">Generating mesh...</div>
         </div>
       </div>
 
@@ -425,7 +438,7 @@
         <h3>Textured 3D Mesh</h3>
         <button class="download-btn hidden" id="downloadGlb" title="Download GLB">⬇</button>
         <div class="asset-content">
-          <div class="spinner"></div>
+          <div class="loading-text">Creating textures...</div>
         </div>
       </div>
 
@@ -433,13 +446,17 @@
         <h3>Physical Properties</h3>
         <button class="download-btn hidden" id="downloadProperties" title="Download JSON">⬇</button>
         <div class="asset-content">
-          <div class="spinner"></div>
+          <div class="loading-text">Processing...</div>
         </div>
       </div>
-    </div>
 
-    <div id="videoContainer" class="hidden" style="position: relative;">
-      <button class="download-btn hidden" id="videoDownloadBtn" title="Download Video">⬇</button>
+      <div id="videoBox" class="asset-box loading">
+        <h3>Simulation Video</h3>
+        <button class="download-btn hidden" id="videoDownloadBtn" title="Download Video">⬇</button>
+        <div class="asset-content">
+          <div class="loading-text">Waiting for simulation...</div>
+        </div>
+      </div>
     </div>
 
     <p class="small" style="margin-top: 1rem;">
@@ -450,16 +467,14 @@
   <div class="footer">
     <div class="footer-section">
       <strong>Open Source Project</strong>
-      <a href="https://github.com/max-seeli/scan2wall" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+      <a href="https://github.com/max-seeli/scan2wall" target="_blank" rel="noopener">⭐ Star on GitHub: scan2wall</a>
     </div>
 
     <div class="footer-section">
       <strong>Built with amazing open source tools</strong>
       <div class="tech-stack">
         <a href="https://github.com/PozzettiAndrea/ComfyUI-MeshCraft" target="_blank" rel="noopener" class="tech-badge">ComfyUI-MeshCraft</a>
-        <span class="tech-badge">Hunyuan 3D 2.1</span>
-        <span class="tech-badge">NVIDIA Isaac Sim</span>
-        <span class="tech-badge">Google Gemini</span>
+        <a href="https://huggingface.co/tencent/Hunyuan3D-2.1" target="_blank" rel="noopener" class="tech-badge">Hunyuan 3D 2.1</a>
       </div>
     </div>
   </div>
@@ -482,7 +497,6 @@
     const fileInput = document.getElementById('file');
     const progress = document.getElementById('progress');
     const assetGrid = document.getElementById('assetGrid');
-    const videoContainer = document.getElementById('videoContainer');
     const thumbnailContainer = document.getElementById('thumbnailContainer');
     const thumbnailImage = document.getElementById('thumbnailImage');
 
@@ -754,17 +768,17 @@
 
     // Show video player
     function showVideo(jobId) {
-      videoContainer.classList.remove('hidden');
-      const downloadBtn = document.getElementById('videoDownloadBtn');
-      videoContainer.innerHTML = `
-        <video controls autoplay loop>
+      const box = document.getElementById('videoBox');
+      const content = box.querySelector('.asset-content');
+      content.innerHTML = `
+        <video controls autoplay loop style="width: 100%; height: 100%; object-fit: contain;">
           <source src="/video/${jobId}" type="video/mp4">
           Your browser does not support the video tag.
         </video>
       `;
-      // Re-add download button after innerHTML wipe
-      videoContainer.appendChild(downloadBtn);
-      downloadBtn.classList.remove('hidden');
+      box.classList.remove('loading');
+      box.classList.add('ready');
+      document.getElementById('videoDownloadBtn').classList.remove('hidden');
     }
 
     // Poll job status and update assets progressively
@@ -801,7 +815,7 @@
           }
 
           // Show video if ready during processing
-          if (data.assets.video_ready && videoContainer.classList.contains('hidden')) {
+          if (data.assets.video_ready && document.getElementById('videoBox').classList.contains('loading')) {
             showVideo(jobId);
           }
         } else if (data.status === 'done') {
@@ -879,9 +893,19 @@
             box.classList.remove('ready');
             box.classList.add('loading');
             const content = box.querySelector('.asset-content');
-            content.innerHTML = '<div class="spinner"></div>';
+            // Set appropriate loading text based on box
+            if (box.id === 'nobackgroundBox') {
+              content.innerHTML = '<div class="loading-text">Processing...</div>';
+            } else if (box.id === 'decodedBox') {
+              content.innerHTML = '<div class="loading-text">Generating mesh...</div>';
+            } else if (box.id === 'glbBox') {
+              content.innerHTML = '<div class="loading-text">Creating textures...</div>';
+            } else if (box.id === 'propertiesBox') {
+              content.innerHTML = '<div class="loading-text">Processing...</div>';
+            } else if (box.id === 'videoBox') {
+              content.innerHTML = '<div class="loading-text">Waiting for simulation...</div>';
+            }
           });
-          videoContainer.classList.add('hidden');
 
           // Hide all download buttons
           document.querySelectorAll('.download-btn').forEach(btn => btn.classList.add('hidden'));

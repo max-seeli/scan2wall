@@ -224,15 +224,31 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     prompt_id = result["prompt_id"]
     print(f"✓ Workflow queued with prompt_id: {prompt_id}")
 
-    # Poll for completion
+    # Poll for completion with progressive file copying
     print("Waiting for ComfyUI to generate mesh...")
-    print("(This may take 30-60 seconds...)")
+    print("(Files will appear progressively as they're created...)")
 
     max_wait = 600  # 10 minutes max
     start_time = time.time()
+    copied_files = set()
+    processed_dir = Path(image_path).parent
 
     while time.time() - start_time < max_wait:
-        # Check history for this prompt
+        # Check for new files in ComfyUI output directory
+        new_files = list(comfy_output_dir.glob(f"{job_id}*"))
+
+        for file_path in new_files:
+            if file_path.name not in copied_files and file_path.exists():
+                # Copy immediately to job directory
+                final_path = processed_dir / file_path.name
+                try:
+                    shutil.copy2(file_path, final_path)
+                    copied_files.add(file_path.name)
+                    print(f"\n✓ Copied: {file_path.name}")
+                except Exception as e:
+                    print(f"\n⚠ Failed to copy {file_path.name}: {e}")
+
+        # Check if workflow is complete
         history_response = requests.get(f"{comfy_url}/history/{prompt_id}")
 
         if history_response.status_code == 200:
@@ -243,21 +259,24 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
 
                 # Check if completed
                 if "outputs" in prompt_history:
-                    print("✓ ComfyUI generation complete!")
-                    processed_dir = Path(image_path).parent
-                    
-                    files_to_move = comfy_output_dir.glob(f"{job_id}*")
-                    for ftm in files_to_move:
-                        if ftm.exists():
-                            final_path = processed_dir / ftm.name
-                            shutil.copy2(ftm, final_path)
-                    
+                    print("\n✓ ComfyUI generation complete!")
+
+                    # Final sweep for any remaining files
+                    for file_path in comfy_output_dir.glob(f"{job_id}*"):
+                        if file_path.name not in copied_files and file_path.exists():
+                            final_path = processed_dir / file_path.name
+                            try:
+                                shutil.copy2(file_path, final_path)
+                                print(f"✓ Final copy: {file_path.name}")
+                            except Exception as e:
+                                print(f"⚠ Failed final copy {file_path.name}: {e}")
+
                     glb_filename = job_id+'.glb'
                     glb_path = processed_dir / glb_filename
                     return str(glb_path)
 
-        # Wait before polling again
-        time.sleep(5)
+        # Wait before polling again (shorter interval for faster response)
+        time.sleep(2)
         print(".", end="", flush=True)
 
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")

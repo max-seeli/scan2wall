@@ -54,7 +54,42 @@ def build_pyramid(parent: str, levels: int = 6, cube_size=0.15, gap=0.02, base_x
             x = x_start + j * spacing
             cfg_cube.func(f"{parent}/cube_{lvl}_{j}", cfg_cube, translation=(x, y, z))
 
-def throw_object(prim_path: str, direction=(1.0, 0.0, 0.5), speed=8.0):
+def build_wall(parent: str, width: int = 15, height: int = 12, brick_width=0.3, brick_height=0.15, brick_depth=0.15, gap=0.01, base_xy=(0.0, 10.0), z0=0.075):
+    prim_utils.create_prim(parent, "Xform")
+    
+    cfg_brick = sim_utils.CuboidCfg(
+        size=(brick_width * 0.97, brick_depth * 0.97, brick_height * 0.97),  # Slightly smaller for dark edge gaps
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.02,
+            rest_offset=0.0
+        ),
+        mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.7, 0.3, 0.2),  # Reddish-brown brick color
+            roughness=0.8  # Matte finish
+        ),
+    )
+    
+    x0, y0 = base_xy
+    brick_spacing_x = brick_width + gap
+    brick_spacing_z = brick_height + gap
+    
+    for row in range(height):
+        # Alternate brick pattern (offset every other row by half a brick)
+        offset = (brick_spacing_x / 2) if row % 2 == 1 else 0
+
+        for col in range(width):
+            # Skip edge bricks on top row (they're unstable)
+            if row == height - 1 and (col == 0 or col == width - 1):
+                continue
+
+            x = x0 - 0.5 * (width - 1) * brick_spacing_x + col * brick_spacing_x + offset
+            y = y0
+            z = z0 + row * brick_spacing_z
+
+            cfg_brick.func(f"{parent}/brick_{row}_{col}", cfg_brick, translation=(x, y, z))
+def throw_object(prim_path: str, direction=(1.0, 0.0, 1.0), speed=8.0):
     """Throw object using Isaac Lab RigidObject (GPU-compatible)"""
     d = np.array(direction, dtype=float)
     n = d / (np.linalg.norm(d) + 1e-8)
@@ -64,14 +99,41 @@ def throw_object(prim_path: str, direction=(1.0, 0.0, 0.5), speed=8.0):
     return v
 
 def design_scene(usd_path_abs, scaling_factor=1.0):
-    cfg_ground = sim_utils.GroundPlaneCfg()
+    # Textured ground plane (concrete/pavement look with roughness)
+    cfg_ground = sim_utils.GroundPlaneCfg(
+        color=(0.35, 0.35, 0.35),  # Dark gray concrete
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            static_friction=0.7,
+            dynamic_friction=0.6
+        )
+    )
+    # Apply visual material with roughness for texture
+    cfg_ground.visual_material = sim_utils.PreviewSurfaceCfg(
+        diffuse_color=(0.35, 0.35, 0.35),
+        roughness=0.9,  # Very rough for asphalt look
+        metallic=0.0
+    )
     cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
-    
-    cfg_light = sim_utils.DistantLightCfg(intensity=3000.0, color=(1.0, 1.0, 1.0))
-    cfg_light.func("/World/lightDistant", cfg_light, translation=(1, 0, 10))
-    
-    cfg_light2 = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 1.0, 1.0))
-    cfg_light2.func("/World/lightDistant2", cfg_light2, translation=(-1, -1, 8))
+
+    # Add sky dome light (very bright blue sky background)
+    cfg_dome = sim_utils.DomeLightCfg(
+        intensity=2000.0,  # Much brighter
+        color=(0.3, 0.6, 1.0)  # Deep sky blue
+    )
+    cfg_dome.func("/World/skyDome", cfg_dome)
+
+    # Reduced intensity 3-point lighting to let sky show through
+    # Key light (main, from front-left, elevated) - warmer tone
+    cfg_key = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 0.95, 0.85))
+    cfg_key.func("/World/lightKey", cfg_key, translation=(-3, -2, 8))
+
+    # Fill light (softer, from front-right, lower intensity) - slightly cool
+    cfg_fill = sim_utils.DistantLightCfg(intensity=800.0, color=(0.9, 0.9, 1.0))
+    cfg_fill.func("/World/lightFill", cfg_fill, translation=(3, -1, 5))
+
+    # Rim/back light (from behind, creates edge definition) - reduced
+    cfg_rim = sim_utils.DistantLightCfg(intensity=600.0, color=(1.0, 1.0, 1.0))
+    cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
 
     # Just spawn using simple UsdFileCfg
     obj_cfg = sim_utils.UsdFileCfg(
@@ -81,7 +143,7 @@ def design_scene(usd_path_abs, scaling_factor=1.0):
         mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
         collision_props=sim_utils.CollisionPropertiesCfg(),
     )
-    obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 2.5))
+    obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 0.5))
 
 def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     ffmpeg = shutil.which("ffmpeg")
@@ -96,8 +158,8 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
 
     # Add watermark with ffmpeg drawtext filter
     watermark_filter = (
-        "drawtext=text='powered by scan2wall.com':"
-        "fontsize=24:"
+        "drawtext=text='scan2wall.com':"
+        "fontsize=32:"
         "fontcolor=white@0.8:"
         "x=w-tw-20:"
         "y=h-th-20:"
@@ -285,8 +347,10 @@ while app_interface.is_running():
                 paths_to_remove = [
                     "/World/Objects",
                     "/World/defaultGroundPlane",
-                    "/World/lightDistant",
-                    "/World/lightDistant2"
+                    "/World/skyDome",
+                    "/World/lightKey",
+                    "/World/lightFill",
+                    "/World/lightRim"
                 ]
                 
                 for path in paths_to_remove:
@@ -318,8 +382,8 @@ while app_interface.is_running():
                             clipping_range=(0.1, 1.0e5)
                         ),
                         offset=CameraCfg.OffsetCfg(
-                            pos=(0.0, -5.0, 7.0),
-                            rot=(0.6830, -0.1830, 0.1830, 0.6830),
+                            pos=(0.0, -8.0, 1.2),
+                            rot=(0.7071, 0.0, 0.0, 0.7071),
                             convention="world"
                         )
                     )
@@ -336,38 +400,25 @@ while app_interface.is_running():
                 # BUILD SCENE
                 print("🏗️  Building scene...")
                 design_scene(usd_path, scaling_factor)
-                build_pyramid("/World/Objects/Pyramid", levels=20, cube_size=0.15, gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
+                build_wall("/World/Objects/Wall", width=15, height=20, brick_width=0.3, brick_height=0.15, brick_depth=0.15, gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
                 
                 # Create RigidObject wrapper AFTER scene is built
                 from isaaclab.assets import RigidObject, RigidObjectCfg
                 obj_cfg = RigidObjectCfg(prim_path="/World/Objects/custom_obj", spawn=None)
                 rigid_obj = RigidObject(cfg=obj_cfg)
-                
+
                 # Initialize physics AND play the simulation
                 print("⚙️  Initializing physics...")
                 dt = sim_context.get_physics_dt() if hasattr(sim_context, "get_physics_dt") else 0.01
                 sim_context.reset()  # This plays the simulation and initializes physics handles
-                
-                for _ in range(5):
+
+                # More warmup steps to let wall settle
+                for _ in range(20):
                     sim_context.step()
                     app_interface.update()
-                
+
                 # Update buffers to populate the data attribute
                 rigid_obj.update(dt)
-                
-                # NOW set velocity - clone from default state
-                print("🎯 Applying velocity...")
-                root_state = rigid_obj.data.default_root_state.clone()
-                root_state[:, 7:10] = torch.tensor([0.0, 17.0, 1.7], device=root_state.device)  # Set lin_vel
-                
-                # Write to simulation
-                rigid_obj.write_root_pose_to_sim(root_state[:, :7])
-                rigid_obj.write_root_velocity_to_sim(root_state[:, 7:])
-                
-                # Reset internal buffers
-                rigid_obj.reset()
-                
-                print("✅ Velocity applied!")
 
                 os.makedirs(out_dir, exist_ok=True)
                 frames_dir = os.path.join(out_dir, "frames")
@@ -377,15 +428,30 @@ while app_interface.is_running():
                 
                 steps = max(1, video_length)
                 captured = 0
-                
-                print(f"🎬 Running {steps} simulation steps...")
+                velocity_applied = False
+                pause_frames = 50  # 1 second pause at 50 FPS
+
+                print(f"🎬 Running {steps} simulation steps (1s pause, then throw)...")
                 for i in range(steps):
                     t0 = time.time()
-                                        
+
+                    # Apply velocity after pause period
+                    if not velocity_applied and captured >= pause_frames:
+                        print("🎯 Applying velocity after pause...")
+                        rigid_obj.update(dt)  # Update buffers first
+                        root_state = rigid_obj.data.default_root_state.clone()
+                        root_state[:, 7:10] = torch.tensor([0.0, 13.0, 6.0], device=root_state.device)
+                        rigid_obj.write_root_pose_to_sim(root_state[:, :7])
+                        rigid_obj.write_root_velocity_to_sim(root_state[:, 7:])
+                        rigid_obj.reset()
+                        velocity_applied = True
+                        print("✅ Velocity applied!")
+
                     sim_context.step()
 
                     if video and (i % 1) == 0:
                         app_interface.update()
+                        rigid_obj.update(dt)  # Update for next frame
                         
                         camera.update(dt)
                         rgb_data = camera.data.output["rgb"]
