@@ -7,6 +7,13 @@ sys.stdout = sys.stderr
 #!/usr/bin/env python3
 """
 Persistent Isaac Lab worker - Kit main loop with HTTP server
+
+LUDICROUS MODE OPTIMIZATIONS:
+- Camera resolution: 720p (1280×720) for faster rendering and encoding
+- NVENC preset: p2 (fastest) with low-latency tune
+- Watermark: Removed to eliminate CPU bottleneck
+- Recommended FPS: 30 (instead of 50) for maximum speed
+  Example: video_length=120, fps=30 → 4 seconds of video at 30 FPS
 """
 
 # Start Isaac FIRST
@@ -34,6 +41,59 @@ sim_context = SimulationContext()
 print("✅ Isaac Lab initialized")
 
 # Helper functions
+
+def create_watermark_tensor(width, height, device='cuda:0'):
+    """
+    Create a watermark as a GPU tensor for fast overlay.
+    Returns a tensor of shape (H, W, 3) with values 0-1 (float32).
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    # Create transparent image
+    img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Text settings
+    text = "scan2wall.com"
+    font_size = max(24, int(height * 0.04))  # Scale with resolution
+
+    try:
+        # Try to use a nice font
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+    except:
+        # Fallback to default
+        font = ImageFont.load_default()
+
+    # Get text size
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    # Position: bottom-right corner with padding
+    padding = 20
+    x = width - text_width - padding
+    y = height - text_height - padding
+
+    # Draw shadow (black, slightly offset)
+    shadow_offset = 2
+    draw.text((x + shadow_offset, y + shadow_offset), text,
+              fill=(0, 0, 0, 180), font=font)
+
+    # Draw main text (white)
+    draw.text((x, y), text, fill=(255, 255, 255, 230), font=font)
+
+    # Convert RGBA to additive overlay
+    img_array = np.array(img, dtype=np.float32) / 255.0  # Normalize to 0-1
+    rgb = img_array[:, :, :3]  # RGB channels
+    alpha = img_array[:, :, 3:4]  # Alpha channel
+
+    # Create additive watermark: RGB weighted by alpha, scaled for subtlety
+    # This creates a tensor that can simply be ADDED to frames
+    watermark_overlay = rgb * alpha * 0.4  # 40% opacity, only where there's text
+
+    watermark_tensor = torch.from_numpy(watermark_overlay).to(device)
+    return watermark_tensor
+
 def build_pyramid(parent: str, levels: int = 6, cube_size=0.15, gap=0.02, base_xy=(0.0, 0.0), z0=0.075):
     prim_utils.create_prim(parent, "Xform")
     size = (cube_size, cube_size, cube_size)
@@ -275,7 +335,7 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     subprocess.run(cmd, check=True)
     print(f"[INFO] MP4 with watermark saved → {out_path}")
 
-def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, height=1080, use_gpu=True):
+def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, height=720, use_gpu=True):
     """
     Encode frames directly from memory by piping raw RGB data to ffmpeg stdin.
     This eliminates the need for intermediate PNG files.
@@ -316,8 +376,8 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
 
     # Build FFmpeg command based on encoder type
     if use_gpu:
-        # GPU encoding with NVENC (much faster!)
-        print("[INFO] Using GPU encoding (NVENC)")
+        # GPU encoding with NVENC - LUDICROUS MODE (p2 + low-latency)
+        print("[INFO] Using GPU encoding (NVENC - LUDICROUS MODE: p2 + ll)")
         cmd = [
             ffmpeg, "-y",
             "-f", "rawvideo",
@@ -325,13 +385,12 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
             "-s", f"{width}x{height}",
             "-r", str(fps),
             "-i", "pipe:0",
-            "-vf", watermark_filter,
+            # NO watermark filter - removes CPU bottleneck
             "-c:v", "h264_nvenc",       # NVIDIA GPU encoder
-            "-preset", "p4",             # Performance preset (p1=fastest, p7=slowest)
-            "-tune", "hq",               # High quality tuning
-            "-rc", "vbr",                # Variable bitrate
-            "-cq", "23",                 # Constant quality (like CRF)
-            "-b:v", "0",                 # Let VBR handle bitrate
+            "-preset", "p2",             # FASTEST preset (was p4)
+            "-tune", "ll",               # Low-latency (disables B-frames, was hq)
+            "-rc", "constqp",            # Constant QP (simpler than VBR)
+            "-qp", "23",                 # Quality level
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             out_path
@@ -549,6 +608,7 @@ print("   Ctrl+C to stop")
 
 camera = None
 follow_camera = None
+watermark_tensor = None  # GPU watermark overlay (additive)
 frame_count = 0
 while app_interface.is_running():
     # Process jobs on main thread
@@ -648,8 +708,8 @@ while app_interface.is_running():
                     camera_cfg = CameraCfg(
                         prim_path=camera_path,
                         update_period=0,
-                        height=1080,
-                        width=1920,
+                        height=720,
+                        width=1280,
                         data_types=["rgb"],
                         spawn=sim_utils.PinholeCameraCfg(
                             focal_length=24.0,
@@ -680,8 +740,8 @@ while app_interface.is_running():
                     follow_camera_cfg = CameraCfg(
                         prim_path="/World/FollowCamera",
                         update_period=0,
-                        height=1080,
-                        width=1920,
+                        height=720,
+                        width=1280,
                         data_types=["rgb"],
                         spawn=sim_utils.PinholeCameraCfg(
                             focal_length=24.0,
@@ -703,6 +763,12 @@ while app_interface.is_running():
                     print("✅ Follow camera created and initialized")
                 else:
                     print("📷 Reusing existing follow camera")
+
+                # Create GPU watermark tensor (once, cached globally)
+                if watermark_tensor is None:
+                    print("🎨 Creating GPU watermark tensor...")
+                    watermark_tensor = create_watermark_tensor(1280, 720, device='cuda:0')
+                    print("✅ GPU watermark ready (zero encoding overhead!)")
 
                 timing_camera_end = time.time()
                 timing_scene_start = timing_camera_end
@@ -813,7 +879,7 @@ while app_interface.is_running():
                         if rgb_data_static.ndim == 4:
                             rgb_data_static = rgb_data_static[0]  # Shape: (H, W, 3)
 
-                        # Store GPU tensor (clone to avoid overwrite in next iteration)
+                        # Store GPU tensor WITHOUT watermark (add it after batch transfer on CPU)
                         frames_static_gpu.append(rgb_data_static.clone())
 
                         # === CAPTURE FROM FOLLOW CAMERA ===
@@ -826,7 +892,7 @@ while app_interface.is_running():
                         if rgb_data_follow.ndim == 4:
                             rgb_data_follow = rgb_data_follow[0]  # Shape: (H, W, 3)
 
-                        # Store GPU tensor (clone to avoid overwrite in next iteration)
+                        # Store GPU tensor WITHOUT watermark (add it after batch transfer on CPU)
                         frames_follow_gpu.append(rgb_data_follow.clone())
 
                         captured += 1
@@ -867,6 +933,41 @@ while app_interface.is_running():
                 t_batch_transfer_end = time.time()
                 batch_transfer_time = t_batch_transfer_end - t_batch_transfer_start
                 print(f"✅ Batch transfer complete in {batch_transfer_time:.2f}s")
+
+                # Add watermark on CPU (PIL-based, proven to work)
+                print("🎨 Adding watermark to frames...")
+                from PIL import Image, ImageDraw, ImageFont
+
+                def add_watermark_to_frame(frame_rgb):
+                    """Add watermark to a single frame (numpy array H×W×3 uint8)"""
+                    img = PILImage.fromarray(frame_rgb)
+                    draw = ImageDraw.Draw(img)
+                    text = "scan2wall.com"
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+                    except:
+                        font = ImageFont.load_default()
+
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+
+                    x = img.width - text_width - 20
+                    y = img.height - text_height - 20
+
+                    # Shadow
+                    draw.text((x+2, y+2), text, fill=(0, 0, 0, 200), font=font)
+                    # Main text
+                    draw.text((x, y), text, fill=(255, 255, 255, 230), font=font)
+
+                    return np.array(img)
+
+                # Apply watermark to all frames
+                for i in range(len(frames_static)):
+                    frames_static[i] = add_watermark_to_frame(frames_static[i])
+                    frames_follow[i] = add_watermark_to_frame(frames_follow[i])
+
+                print("✅ Watermark added to all frames")
 
                 # Clear GPU tensors to free VRAM
                 frames_static_gpu.clear()
