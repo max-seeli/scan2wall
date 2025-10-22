@@ -95,48 +95,143 @@ def throw_object(prim_path: str, direction=(1.0, 0.0, 1.0), speed=8.0):
     d = np.array(direction, dtype=float)
     n = d / (np.linalg.norm(d) + 1e-8)
     v = n * float(speed)
-    
+
     print(f"🎯 Will apply velocity to {prim_path}: {v}")
     return v
 
-def design_scene(usd_path_abs, scaling_factor=1.0):
-    # Textured ground plane (concrete/pavement look with roughness)
+def create_base_scene_usd(output_path="/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"):
+    """
+    Create and export a pre-built base scene USD file containing:
+    - Ground plane with physics materials
+    - Lighting setup (sky dome + 3-point lighting)
+    - Wall structure
+
+    This eliminates ~5 seconds of scene building per simulation.
+    """
+    print(f"🏗️  Creating base scene USD: {output_path}")
+
+    # Get current stage
+    stage = sim_context.stage
+
+    # Clear existing scene elements (collect paths first to avoid iterator invalidation)
+    world_prim = stage.GetPrimAtPath("/World")
+    if world_prim.IsValid():
+        child_paths = [child.GetPath() for child in world_prim.GetChildren()]
+        for path in child_paths:
+            if stage.GetPrimAtPath(path).IsValid():
+                stage.RemovePrim(path)
+
+    # Build ground plane
     cfg_ground = sim_utils.GroundPlaneCfg(
-        color=(0.35, 0.35, 0.35),  # Dark gray concrete
+        color=(0.35, 0.35, 0.35),
         physics_material=sim_utils.RigidBodyMaterialCfg(
             static_friction=0.7,
             dynamic_friction=0.6
         )
     )
-    # Apply visual material with roughness for texture
     cfg_ground.visual_material = sim_utils.PreviewSurfaceCfg(
         diffuse_color=(0.35, 0.35, 0.35),
-        roughness=0.9,  # Very rough for asphalt look
+        roughness=0.9,
         metallic=0.0
     )
     cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
 
-    # Add sky dome light (very bright blue sky background)
+    # Add sky dome light
     cfg_dome = sim_utils.DomeLightCfg(
-        intensity=2000.0,  # Much brighter
-        color=(0.3, 0.6, 1.0)  # Deep sky blue
+        intensity=2000.0,
+        color=(0.3, 0.6, 1.0)
     )
     cfg_dome.func("/World/skyDome", cfg_dome)
 
-    # Reduced intensity 3-point lighting to let sky show through
-    # Key light (main, from front-left, elevated) - warmer tone
+    # Add 3-point lighting
     cfg_key = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 0.95, 0.85))
     cfg_key.func("/World/lightKey", cfg_key, translation=(-3, -2, 8))
 
-    # Fill light (softer, from front-right, lower intensity) - slightly cool
     cfg_fill = sim_utils.DistantLightCfg(intensity=800.0, color=(0.9, 0.9, 1.0))
     cfg_fill.func("/World/lightFill", cfg_fill, translation=(3, -1, 5))
 
-    # Rim/back light (from behind, creates edge definition) - reduced
     cfg_rim = sim_utils.DistantLightCfg(intensity=600.0, color=(1.0, 1.0, 1.0))
     cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
 
-    # Just spawn using simple UsdFileCfg
+    # Build wall structure
+    build_wall("/World/StaticObjects/Wall", width=15, height=20,
+               brick_width=0.3, brick_height=0.15, brick_depth=0.15,
+               gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
+
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Export the stage to USD file
+    print(f"💾 Exporting base scene to {output_path}...")
+    stage.Export(output_path)
+    print(f"✅ Base scene USD created: {output_path}")
+
+    return output_path
+
+def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
+    """
+    Load scene elements and dynamic object.
+
+    Args:
+        usd_path_abs: Path to the dynamic object USD file
+        scaling_factor: Scale factor for the dynamic object
+        use_base_scene: If True, load pre-built base scene USD (faster)
+    """
+    base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
+
+    # Try to use pre-built base scene for performance
+    if use_base_scene and os.path.exists(base_scene_path):
+        print(f"📦 Loading pre-built base scene from {base_scene_path}")
+        stage = sim_context.stage
+
+        # Load base scene as a sublayer (contains ground, lights, wall)
+        root_layer = stage.GetRootLayer()
+        if base_scene_path not in root_layer.subLayerPaths:
+            root_layer.subLayerPaths.append(base_scene_path)
+        print("✅ Base scene loaded")
+
+    else:
+        # Fallback: Build scene from scratch (old behavior)
+        print("⚠️  Base scene not found, building from scratch...")
+
+        # Textured ground plane (concrete/pavement look with roughness)
+        cfg_ground = sim_utils.GroundPlaneCfg(
+            color=(0.35, 0.35, 0.35),
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=0.7,
+                dynamic_friction=0.6
+            )
+        )
+        cfg_ground.visual_material = sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.35, 0.35, 0.35),
+            roughness=0.9,
+            metallic=0.0
+        )
+        cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
+
+        # Add sky dome light
+        cfg_dome = sim_utils.DomeLightCfg(
+            intensity=2000.0,
+            color=(0.3, 0.6, 1.0)
+        )
+        cfg_dome.func("/World/skyDome", cfg_dome)
+
+        # 3-point lighting
+        cfg_key = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 0.95, 0.85))
+        cfg_key.func("/World/lightKey", cfg_key, translation=(-3, -2, 8))
+
+        cfg_fill = sim_utils.DistantLightCfg(intensity=800.0, color=(0.9, 0.9, 1.0))
+        cfg_fill.func("/World/lightFill", cfg_fill, translation=(3, -1, 5))
+
+        cfg_rim = sim_utils.DistantLightCfg(intensity=600.0, color=(1.0, 1.0, 1.0))
+        cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
+
+        # Build wall (only if not using base scene)
+        build_wall("/World/StaticObjects/Wall", width=15, height=20,
+                   brick_width=0.3, brick_height=0.15, brick_depth=0.15,
+                   gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
+
+    # Always load the dynamic object (this changes per simulation)
     obj_cfg = sim_utils.UsdFileCfg(
         usd_path=usd_path_abs,
         scale=(scaling_factor, scaling_factor, scaling_factor),
@@ -281,6 +376,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._handle_convert()
         elif self.path == '/run_simulation':
             self._handle_simulation()
+        elif self.path == '/create_base_scene':
+            self._handle_create_base_scene()
         else:
             self.send_response(404)
             self.end_headers()
@@ -346,7 +443,33 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(result).encode())
-    
+
+    def _handle_create_base_scene(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length) if content_length > 0 else b'{}'
+        req = json.loads(body) if body else {}
+
+        output_path = req.get('output_path', '/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd')
+
+        job_id = str(uuid.uuid4())
+        print(f"🏗️  Queuing base scene creation: {output_path} (job: {job_id})")
+
+        job_queue.put(('create_base_scene', job_id, {'output_path': output_path}))
+        result = self._wait_for_result(job_id, timeout=60)
+
+        if result["status"] == "completed":
+            print(f"✅ Base scene created (job: {job_id})")
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+        else:
+            print(f"❌ Base scene creation failed (job: {job_id})")
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+
     def _wait_for_result(self, job_id, timeout=120):
         start = time.time()
         while job_id not in job_results:
@@ -386,7 +509,7 @@ app_interface = omni.kit.app.get_app_interface()
 
 print("✅ Kit main loop running")
 print("   API: http://localhost:8090")
-print("   Endpoints: /convert, /run_simulation")
+print("   Endpoints: /convert, /run_simulation, /create_base_scene")
 print("   Ctrl+C to stop")
 
 camera = None
@@ -408,7 +531,23 @@ while app_interface.is_running():
                 traceback.print_exc()
                 job_results[job_id] = {"status": "failed", "error": str(e)}
                 print(f"❌ Conversion {job_id} failed: {e}")
-        
+
+        elif job_type == 'create_base_scene':
+            print(f"⚙️  Processing base scene creation {job_id}...")
+            try:
+                output_path = data['output_path']
+                result_path = create_base_scene_usd(output_path)
+                job_results[job_id] = {
+                    "status": "completed",
+                    "output_path": result_path
+                }
+                print(f"✅ Base scene creation {job_id} done")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                job_results[job_id] = {"status": "failed", "error": str(e)}
+                print(f"❌ Base scene creation {job_id} failed: {e}")
+
         elif job_type == 'simulate':
             print(f"⚙️  Processing simulation {job_id}...")
             try:
@@ -448,10 +587,17 @@ while app_interface.is_running():
                 for path in paths_to_remove:
                     if stage.GetPrimAtPath(path).IsValid():
                         stage.RemovePrim(path)
-                
+
+                # Remove base scene sublayer if present (so it can be re-added cleanly)
+                base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
+                root_layer = stage.GetRootLayer()
+                if base_scene_path in root_layer.subLayerPaths:
+                    root_layer.subLayerPaths.remove(base_scene_path)
+                    print("🗑️  Removed base scene sublayer for clean reload")
+
                 # Reset physics to clear cached state
                 sim_context.reset()
-                
+
                 sim_context.step()
                 app_interface.update()
                 print("✅ Cleanup done")
@@ -527,9 +673,10 @@ while app_interface.is_running():
                 timing_scene_start = timing_camera_end
 
                 # BUILD SCENE
-                print("🏗️  Building scene...")
+                print("🏗️  Loading scene...")
+                # design_scene now loads pre-built base scene (ground, lights, wall)
+                # and only adds the dynamic object
                 design_scene(usd_path, scaling_factor)
-                build_wall("/World/Objects/Wall", width=15, height=20, brick_width=0.3, brick_height=0.15, brick_depth=0.15, gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
 
                 timing_scene_end = time.time()
                 timing_physics_init_start = timing_scene_end
