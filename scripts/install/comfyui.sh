@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e  # Stop on first error
 
+# Track installation status for summary
+INSTALL_WARNINGS=()
+INSTALL_FAILURES=()
+
 echo "🚀 Setting up ComfyUI with uv (fast Python package manager)"
 echo "=========================================================="
 
@@ -108,13 +112,57 @@ echo "🔧 Fixing OpenCV package conflicts..."
 echo "   Some custom nodes require opencv-contrib-python (includes extra modules)"
 echo "   while others specify opencv-python (basic version)."
 echo "   Installing opencv-contrib-python which satisfies both requirements..."
-uv pip uninstall opencv-python opencv-python-headless 2>/dev/null || true
-# Pin to 4.10.0.84 - version 4.12.x is broken (missing cv2.__init__.py, breaks MeshCraft)
-uv pip install opencv-contrib-python==4.10.0.84
-echo "   ✅ OpenCV configured with contrib modules (pinned to 4.10.0.84)"
+
+# Aggressively remove all OpenCV variants
+set +e
+uv pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null
+set -e
+
+# Pin to 4.10.0.84 - version 4.12.x is broken (missing cv2.__init__.py)
+# Force reinstall to ensure clean installation
+echo "   Installing opencv-contrib-python==4.10.0.84..."
+uv pip install --reinstall opencv-contrib-python==4.10.0.84
+
+# Verify installation
+echo "   Verifying OpenCV installation..."
+if python -c "import cv2; assert hasattr(cv2, 'INTER_CUBIC'), 'Missing INTER_CUBIC'; assert hasattr(cv2, 'BORDER_DEFAULT'), 'Missing BORDER_DEFAULT'; print(f'OpenCV {cv2.__version__} verified')" 2>/dev/null; then
+    echo "   ✅ OpenCV configured with contrib modules (version 4.10.0.84)"
+else
+    echo "   ⚠️  OpenCV verification failed"
+fi
 
 echo ""
 echo "🔧 Checking C++ compiler (required for CUDA extensions)..."
+
+# Helper function to fix apt repository issues
+fix_apt_sources() {
+    echo "   Attempting to fix apt repository issues..."
+
+    # Check if we have the problematic massedcompute mirror
+    if grep -r "mcache-dsm.massedcompute.com" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | grep -q .; then
+        echo "   Found problematic mirror (mcache-dsm.massedcompute.com)"
+        echo "   Switching to official Ubuntu mirrors..."
+
+        # Backup existing sources
+        sudo cp /etc/apt/sources.list /etc/apt/sources.list.backup 2>/dev/null || true
+
+        # Replace massedcompute mirror with official Ubuntu mirror
+        sudo sed -i 's|http[s]*://mcache-dsm.massedcompute.com/debian-archive/|http://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list 2>/dev/null || true
+        sudo sed -i 's|http[s]*://mcache-dsm.massedcompute.com/debian-security/|http://security.ubuntu.com/ubuntu/|g' /etc/apt/sources.list 2>/dev/null || true
+
+        # Try to update again
+        if sudo apt-get update -qq 2>&1 | grep -q "certificate"; then
+            echo "   Still having certificate issues, trying with different security settings..."
+            # Create apt config to be more lenient with certificates for this session
+            echo 'Acquire::https::Verify-Peer "false";' | sudo tee /etc/apt/apt.conf.d/99temp-no-verify >/dev/null
+            sudo apt-get update -qq
+            sudo rm /etc/apt/apt.conf.d/99temp-no-verify 2>/dev/null || true
+        fi
+        return 0
+    fi
+
+    return 1
+}
 
 # Test if g++ can actually compile (not just if command exists)
 test_cpp_compilation() {
@@ -171,7 +219,20 @@ else
         INSTALL_PKGS="$INSTALL_PKGS g++-$ver"
     done
 
-    if sudo apt-get update -qq && sudo apt-get install --reinstall -y $INSTALL_PKGS > /dev/null 2>&1; then
+    # Try apt-get update, if it fails try to fix sources
+    if ! sudo apt-get update -qq 2>&1; then
+        echo "   apt-get update failed, attempting to fix repository issues..."
+        fix_apt_sources
+
+        # Try update one more time after fix
+        if ! sudo apt-get update -qq 2>&1; then
+            echo "⚠️  Still having issues with apt-get update"
+            echo "   Proceeding with installation anyway..."
+        fi
+    fi
+
+    # Install missing packages (don't remove existing ones)
+    if sudo apt-get install -y $INSTALL_PKGS 2>&1; then
         echo "✅ C++ toolchain installed successfully"
 
         # Test compilation again
@@ -194,6 +255,7 @@ else
         echo "   Skipping CUDA extension building..."
         # Set flag to skip extension building
         SKIP_CUDA_EXTENSIONS=true
+        INSTALL_WARNINGS+=("C++ compiler: Installation failed")
     fi
 fi
 
@@ -222,12 +284,18 @@ else
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         rm cuda-keyring_1.1-1_all.deb
-        sudo apt-get update -qq
+
+        # Try update with fix if needed
+        if ! sudo apt-get update -qq 2>&1; then
+            echo "   apt-get update failed, attempting to fix repository issues..."
+            fix_apt_sources
+            sudo apt-get update -qq 2>&1 || true
+        fi
     fi
 
     # Install CUDA Toolkit
     echo "   Installing cuda-toolkit-12-8 (this may take a few minutes)..."
-    if sudo apt-get install -y cuda-toolkit-12-8 > /dev/null 2>&1; then
+    if sudo apt-get install -y cuda-toolkit-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
         echo "✅ CUDA Toolkit installed successfully"
 
         # Set CUDA_HOME
@@ -260,6 +328,27 @@ else
         echo "   Skipping CUDA extension building..."
         # Set flag to skip extension building
         SKIP_CUDA_EXTENSIONS=true
+        INSTALL_WARNINGS+=("CUDA Toolkit: Installation failed")
+    fi
+fi
+
+# Re-check compiler availability after CUDA installation
+# CUDA toolkit often installs build-essential as a dependency
+echo ""
+echo "🔧 Verifying final compiler setup..."
+if [ "$SKIP_CUDA_EXTENSIONS" = true ]; then
+    if command -v g++ &> /dev/null && test_cpp_compilation; then
+        echo "✅ C++ compiler is now available (installed via CUDA dependencies)"
+        echo "   Compiler: $(g++ --version | head -n1)"
+
+        # Clear the skip flag - we can build extensions now!
+        SKIP_CUDA_EXTENSIONS=false
+
+        # Remove the warning about compiler failure
+        INSTALL_WARNINGS=("${INSTALL_WARNINGS[@]/C++ compiler: Installation failed/}")
+        INSTALL_WARNINGS=("${INSTALL_WARNINGS[@]/ /}")  # Remove empty elements
+    else
+        echo "⚠️  C++ compiler still not available after CUDA installation"
     fi
 fi
 
@@ -270,19 +359,40 @@ echo "🔧 Building custom rasterizer extensions..."
 if [ "$SKIP_CUDA_EXTENSIONS" = true ]; then
     echo "⚠️  Skipping CUDA extension building (CUDA Toolkit not available)"
     echo "   ComfyUI will work but may have reduced functionality"
+    INSTALL_WARNINGS+=("CUDA extensions: Skipped (C++ compiler or CUDA toolkit unavailable)")
 else
     # Build MeshCraft custom rasterizer
     if [ -d "ComfyUI-MeshCraft/hy3dpaint/custom_rasterizer" ]; then
+        echo "   Building custom_rasterizer..."
         cd ComfyUI-MeshCraft/hy3dpaint/custom_rasterizer/
-        python -m setup install
+
+        set +e
+        python -m setup install 2>&1 | grep -v "^$"
+        RASTERIZER_EXIT=$?
+        set -e
+
         cd ../../..
+
+        if [ $RASTERIZER_EXIT -ne 0 ]; then
+            INSTALL_WARNINGS+=("MeshCraft custom_rasterizer: Build failed")
+        fi
     fi
 
     # Build MeshCraft DifferentiableRenderer
     if [ -d "ComfyUI-MeshCraft/hy3dpaint/DifferentiableRenderer" ]; then
+        echo "   Building DifferentiableRenderer..."
         cd ComfyUI-MeshCraft/hy3dpaint/DifferentiableRenderer/
-        python -m setup install
+
+        set +e
+        python -m setup install 2>&1 | grep -v "^$"
+        RENDERER_EXIT=$?
+        set -e
+
         cd ../../..
+
+        if [ $RENDERER_EXIT -ne 0 ]; then
+            INSTALL_WARNINGS+=("MeshCraft DifferentiableRenderer: Build failed")
+        fi
     fi
 fi
 
@@ -298,27 +408,101 @@ if command -v blender &> /dev/null; then
     echo "✅ Blender already installed: $(blender --version | head -n1)"
 else
     echo "📥 Installing Blender via snap..."
-    sudo snap install blender --classic
 
-    # Verify installation
+    # Temporarily disable exit on error (snap may produce harmless warnings)
+    set +e
+    # Redirect stderr, filter out mkdir warnings and empty lines
+    sudo snap install blender --classic 2>&1 | grep -v "^$\|^mkdir:" || true
+    BLENDER_EXIT_CODE=$?
+    set -e
+
+    # Verify installation (actual check - ignore exit code from snap)
     if command -v blender &> /dev/null; then
         echo "✅ Blender installed successfully: $(blender --version | head -n1)"
     else
         echo "⚠️  Blender installation failed. MeshCraft UV unwrapping may not work."
         echo "   Please install Blender manually: sudo snap install blender --classic"
+        INSTALL_WARNINGS+=("Blender: Installation failed or not in PATH")
     fi
 fi
 
 echo ""
 echo "📦 Installing final dependencies..."
+
+# Install core dependencies (these should not fail)
 uv pip install transformers==4.46.3
 uv pip install pynanoinstantmeshes
 uv pip install hf_transfer
-uv pip install diso --no-build-isolation
+
+# Install diso (optional CUDA extension - may fail if C++ compiler issues)
+echo ""
+echo "📦 Installing diso (CUDA mesh processing extension)..."
+if [ "$SKIP_CUDA_EXTENSIONS" = true ]; then
+    echo "⚠️  Skipping diso installation (CUDA extensions disabled)"
+    INSTALL_WARNINGS+=("diso: Skipped due to missing CUDA toolchain")
+else
+    # Temporarily disable exit on error for this optional package
+    set +e
+    uv pip install diso --no-build-isolation 2>&1 | tee /tmp/diso_install.log
+    DISO_EXIT_CODE=$?
+    set -e
+
+    if [ $DISO_EXIT_CODE -eq 0 ]; then
+        echo "✅ diso installed successfully"
+    else
+        echo "⚠️  Failed to install diso (optional CUDA extension)"
+        echo "   This is used for advanced mesh processing in MeshCraft"
+        echo "   ComfyUI will work without it but some features may be unavailable"
+        echo ""
+        INSTALL_WARNINGS+=("diso: Installation failed (C++ compiler or CUDA issues)")
+
+        # Check the error log for specific issues
+        if grep -q "cannot execute 'cc1plus'" /tmp/diso_install.log; then
+            echo "   Issue: C++ compiler (g++) not working properly"
+            echo "   Fix: Run 'sudo apt-get install --reinstall build-essential g++'"
+        elif grep -q "nvcc fatal" /tmp/diso_install.log; then
+            echo "   Issue: CUDA compilation failed"
+            echo "   Fix: Ensure CUDA Toolkit is properly installed"
+        fi
+        echo ""
+    fi
+    rm -f /tmp/diso_install.log
+fi
+
+# Install server dependencies
 uv pip install fastapi python-multipart uvicorn
+
 echo ""
 echo "✅ ComfyUI setup complete!"
 echo "=========================================================="
+
+# Print installation summary if there were any warnings or failures
+if [ ${#INSTALL_WARNINGS[@]} -gt 0 ] || [ ${#INSTALL_FAILURES[@]} -gt 0 ]; then
+    echo ""
+    echo "📋 Installation Summary"
+    echo "=========================================================="
+
+    if [ ${#INSTALL_FAILURES[@]} -gt 0 ]; then
+        echo ""
+        echo "❌ Critical Failures:"
+        for failure in "${INSTALL_FAILURES[@]}"; do
+            echo "   • $failure"
+        done
+    fi
+
+    if [ ${#INSTALL_WARNINGS[@]} -gt 0 ]; then
+        echo ""
+        echo "⚠️  Warnings (non-critical):"
+        for warning in "${INSTALL_WARNINGS[@]}"; do
+            echo "   • $warning"
+        done
+        echo ""
+        echo "Note: ComfyUI will work, but some optional features may be unavailable."
+    fi
+
+    echo "=========================================================="
+fi
+
 echo ""
 echo "Next steps:"
 echo "1. Activate the environment:"

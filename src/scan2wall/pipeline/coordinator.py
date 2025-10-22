@@ -288,12 +288,17 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
     print(f"Converting {fname} → {fname_new} via Isaac worker...")
 
     usd_dir = out_file.parent
-    
+
+    # Convert host paths to container paths
+    # Get the actual project root dynamically
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    host_data_dir = str(project_root / "data")
+
     container_glb_path = str(out_file).replace(
-        "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
+        host_data_dir, "/workspace/s2w-data"
     )
     container_usd_dir = str(usd_dir).replace(
-        "/home/ubuntu/scan2wall/data", "/workspace/s2w-data"
+        host_data_dir, "/workspace/s2w-data"
     )
 
     payload = {
@@ -321,7 +326,11 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
     """
     print("🎬 Creating throwing animation via Isaac worker...")
 
-    container_usd_path = file.replace("/home/ubuntu/scan2wall", "/workspace")
+    # Convert host paths to container paths dynamically
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    host_data_dir = str(project_root / "data")
+
+    container_usd_path = file.replace(host_data_dir, "/workspace/s2w-data")
     out_dir = str(Path(container_usd_path).parent)
 
     payload = {
@@ -339,13 +348,19 @@ def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, stat
         r.raise_for_status()
         result = r.json()
 
-        # Get container path and convert to host path
-        # Video should be saved as {job_id}_sim.mp4 in the job directory
-        container_video = result.get("video_path", f"{out_dir}/{job_id}_sim.mp4")
-        host_video = container_video.replace("/workspace/s2w-data", "/home/ubuntu/scan2wall/data")
+        # Get container paths and convert to host paths
+        # Two videos: static and follow camera
+        container_video_static = result.get("video_path_static", f"{out_dir}/{job_id}_static.mp4")
+        container_video_follow = result.get("video_path_follow", f"{out_dir}/{job_id}_follow.mp4")
 
-        print(f"✅ Video ready: {host_video}")
-        return host_video
+        host_video_static = container_video_static.replace("/workspace/s2w-data", host_data_dir)
+        host_video_follow = container_video_follow.replace("/workspace/s2w-data", host_data_dir)
+
+        print(f"✅ Videos ready:")
+        print(f"   Static view: {host_video_static}")
+        print(f"   Follow view: {host_video_follow}")
+
+        return {"static": host_video_static, "follow": host_video_follow}
     except Exception as e:
         raise RuntimeError(f"Simulation failed: {e}")
 

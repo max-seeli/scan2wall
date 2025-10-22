@@ -28,6 +28,7 @@ from pxr import UsdPhysics, Gf
 import numpy as np
 import os, shutil, glob, subprocess, time
 import torch
+from PIL import Image as PILImage
 # Initialize simulation
 sim_context = SimulationContext()
 print("✅ Isaac Lab initialized")
@@ -305,6 +306,7 @@ print("   Endpoints: /convert, /run_simulation")
 print("   Ctrl+C to stop")
 
 camera = None
+follow_camera = None
 frame_count = 0
 while app_interface.is_running():
     # Process jobs on main thread
@@ -327,6 +329,9 @@ while app_interface.is_running():
             print(f"⚙️  Processing simulation {job_id}...")
             try:
                 
+                # Start timing
+                sim_start_time = time.time()
+
                 # Extract params
                 usd_path = data['usd_path']
                 out_dir = data.get('out_dir', '/workspace/s2w-data/recordings')
@@ -336,7 +341,7 @@ while app_interface.is_running():
                 scaling_factor = data.get('scaling_factor', 1.0)
                 skip_first = data.get('skip_first', 10)
                 request_job_id = data.get('job_id', 'unknown')  # Get job_id from request
-                
+
                 stage = sim_context.stage
                 camera_path = "/World/RenderCamera"
                 
@@ -364,11 +369,11 @@ while app_interface.is_running():
                 app_interface.update()
                 print("✅ Cleanup done")
         
-                # === CREATE OR REUSE CAMERA ===
+                # === CREATE OR REUSE CAMERAS ===
                 if camera is None:
-                    print("📷 Creating camera (first time)")
+                    print("📷 Creating static camera (first time)")
                     from isaaclab.sensors.camera import Camera, CameraCfg
-                    
+
                     camera_cfg = CameraCfg(
                         prim_path=camera_path,
                         update_period=0,
@@ -388,13 +393,45 @@ while app_interface.is_running():
                         )
                     )
                     camera = Camera(cfg=camera_cfg)
-                    
-                    # Initialize the camera
-                    print("📷 Initializing camera...")
+
+                    # Initialize the static camera
+                    print("📷 Initializing static camera...")
                     camera._initialize_callback(None)
-                    print("✅ Camera created and initialized")
+                    print("✅ Static camera created and initialized")
                 else:
-                    print("📷 Reusing existing camera")
+                    print("📷 Reusing existing static camera")
+
+                # Create follow camera
+                if follow_camera is None:
+                    print("📷 Creating follow camera (first time)")
+                    from isaaclab.sensors.camera import Camera, CameraCfg
+
+                    follow_camera_cfg = CameraCfg(
+                        prim_path="/World/FollowCamera",
+                        update_period=0,
+                        height=1080,
+                        width=1920,
+                        data_types=["rgb"],
+                        spawn=sim_utils.PinholeCameraCfg(
+                            focal_length=24.0,
+                            focus_distance=400.0,
+                            horizontal_aperture=20.955,
+                            clipping_range=(0.1, 1.0e5)
+                        ),
+                        offset=CameraCfg.OffsetCfg(
+                            pos=(0.0, -3.0, 0.0),  # Centered on object, 3m back - updated each frame
+                            rot=(0.7071, 0.7071, 0.0, 0.0),  # FIXED: +Y forward, +Z up (90° around X)
+                            convention="world"
+                        )
+                    )
+                    follow_camera = Camera(cfg=follow_camera_cfg)
+
+                    # Initialize the follow camera
+                    print("📷 Initializing follow camera...")
+                    follow_camera._initialize_callback(None)
+                    print("✅ Follow camera created and initialized")
+                else:
+                    print("📷 Reusing existing follow camera")
         
                 # BUILD SCENE
                 # BUILD SCENE
@@ -421,10 +458,16 @@ while app_interface.is_running():
                 rigid_obj.update(dt)
 
                 os.makedirs(out_dir, exist_ok=True)
-                frames_dir = os.path.join(out_dir, "frames")
-                if os.path.isdir(frames_dir):
-                    shutil.rmtree(frames_dir)
-                os.makedirs(frames_dir)
+                frames_dir_static = os.path.join(out_dir, "frames_static")
+                frames_dir_follow = os.path.join(out_dir, "frames_follow")
+
+                if os.path.isdir(frames_dir_static):
+                    shutil.rmtree(frames_dir_static)
+                if os.path.isdir(frames_dir_follow):
+                    shutil.rmtree(frames_dir_follow)
+
+                os.makedirs(frames_dir_static)
+                os.makedirs(frames_dir_follow)
                 
                 steps = max(1, video_length)
                 captured = 0
@@ -452,24 +495,63 @@ while app_interface.is_running():
                     if video and (i % 1) == 0:
                         app_interface.update()
                         rigid_obj.update(dt)  # Update for next frame
-                        
+
+                        # Get object position for follow camera
+                        obj_pos = rigid_obj.data.root_pos_w[0].cpu().numpy()
+
+                        # Update follow camera position (centered behind object)
+                        from pxr import Gf
+                        follow_offset = Gf.Vec3d(0.0, -3.0, 0.0)  # X=0 (centered), Y=-3m (behind), Z=0 (centered)
+                        follow_pos = Gf.Vec3d(float(obj_pos[0]), float(obj_pos[1]), float(obj_pos[2])) + follow_offset
+
+                        # Update follow camera transform (position only, keep rotation fixed)
+                        follow_cam_prim = stage.GetPrimAtPath("/World/FollowCamera")
+                        if follow_cam_prim.IsValid():
+                            from pxr import UsdGeom
+                            xformable = UsdGeom.Xformable(follow_cam_prim)
+                            xformable.ClearXformOpOrder()
+                            xformable.AddTranslateOp().Set(follow_pos)
+                            # Fixed rotation: look forward in +Y direction
+                            # Quaternion (w, x, y, z) = (0.7071, 0.7071, 0, 0) is 90° around X-axis
+                            # This rotates camera from looking down -Z to looking forward +Y
+                            xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(0.7071, 0.7071, 0.0, 0.0))
+
+                        # === CAPTURE FROM STATIC CAMERA ===
                         camera.update(dt)
-                        rgb_data = camera.data.output["rgb"]
-                        
-                        frame_path = os.path.join(frames_dir, f"rgb_{captured:05d}.png")
-                        import cv2
-                        
-                        if hasattr(rgb_data, 'cpu'):
-                            rgb_data = rgb_data.cpu().numpy()
-                        
-                        if rgb_data.ndim == 4:
-                            rgb_data = rgb_data[0]
-                        
+                        rgb_data_static = camera.data.output["rgb"]
+
+                        frame_path_static = os.path.join(frames_dir_static, f"rgb_{captured:05d}.png")
+
+                        if hasattr(rgb_data_static, 'cpu'):
+                            rgb_data_static = rgb_data_static.cpu().numpy()
+
+                        if rgb_data_static.ndim == 4:
+                            rgb_data_static = rgb_data_static[0]
+
+                        rgb_uint8_static = (rgb_data_static * 255).astype('uint8')
+                        # Isaac Lab returns RGB, PIL expects RGB - no conversion needed
+                        PILImage.fromarray(rgb_uint8_static).save(frame_path_static)
+
+                        # === CAPTURE FROM FOLLOW CAMERA ===
+                        follow_camera.update(dt)
+                        rgb_data_follow = follow_camera.data.output["rgb"]
+
+                        frame_path_follow = os.path.join(frames_dir_follow, f"rgb_{captured:05d}.png")
+
+                        if hasattr(rgb_data_follow, 'cpu'):
+                            rgb_data_follow = rgb_data_follow.cpu().numpy()
+
+                        if rgb_data_follow.ndim == 4:
+                            rgb_data_follow = rgb_data_follow[0]
+
+                        rgb_uint8_follow = (rgb_data_follow * 255).astype('uint8')
+                        # Isaac Lab returns RGB, PIL expects RGB - no conversion needed
+                        PILImage.fromarray(rgb_uint8_follow).save(frame_path_follow)
+
+                        captured += 1
+
                         if i % 50 == 0:
                             print(f"   Frame {captured}/{steps}")
-                        
-                        cv2.imwrite(frame_path, cv2.cvtColor(rgb_data, cv2.COLOR_RGB2BGR))
-                        captured += 1
                     
                     sleep_time = dt - (time.time() - t0)
                     if sleep_time > 0:
@@ -481,21 +563,44 @@ while app_interface.is_running():
                     if stage.GetPrimAtPath(path).IsValid():
                         stage.RemovePrim(path)
                 
+                # Mark simulation time (before encoding)
+                sim_end_time = time.time()
+                simulation_time = sim_end_time - sim_start_time
+
+                encoding_start_time = time.time()
                 if video:
-                    print("🎥 Encoding video...")
-                    # Use job_id in video filename for unique naming
-                    video_filename = f"{request_job_id}_sim.mp4"
-                    out_mp4 = os.path.join(out_dir, video_filename)
-                    ffmpeg_encode(frames_dir, out_mp4, fps, skip_first)
-                    shutil.rmtree(frames_dir, ignore_errors=True)
-                
+                    print("🎥 Encoding videos...")
+                    # Encode static camera video
+                    video_filename_static = f"{request_job_id}_static.mp4"
+                    out_mp4_static = os.path.join(out_dir, video_filename_static)
+                    print("   Encoding static camera view...")
+                    ffmpeg_encode(frames_dir_static, out_mp4_static, fps, skip_first)
+                    shutil.rmtree(frames_dir_static, ignore_errors=True)
+
+                    # Encode follow camera video
+                    video_filename_follow = f"{request_job_id}_follow.mp4"
+                    out_mp4_follow = os.path.join(out_dir, video_filename_follow)
+                    print("   Encoding follow camera view...")
+                    ffmpeg_encode(frames_dir_follow, out_mp4_follow, fps, skip_first)
+                    shutil.rmtree(frames_dir_follow, ignore_errors=True)
+
+                encoding_end_time = time.time()
+                encoding_time = encoding_end_time - encoding_start_time
+                total_time = encoding_end_time - sim_start_time
+
                 job_results[job_id] = {
                     "status": "completed",
                     "frames": captured,
                     "output": out_dir,
-                    "video_path": out_mp4
+                    "video_path_static": out_mp4_static,
+                    "video_path_follow": out_mp4_follow,
+                    "timing": {
+                        "simulation_seconds": round(simulation_time, 2),
+                        "encoding_seconds": round(encoding_time, 2),
+                        "total_seconds": round(total_time, 2)
+                    }
                 }
-                print(f"✅ Simulation {job_id} done ({captured} frames)")
+                print(f"✅ Simulation {job_id} done ({captured} frames, {total_time:.1f}s total)")
             except Exception as e:
                 import traceback
                 traceback.print_exc()
