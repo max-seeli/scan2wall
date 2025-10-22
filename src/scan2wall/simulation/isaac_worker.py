@@ -180,6 +180,90 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     subprocess.run(cmd, check=True)
     print(f"[INFO] MP4 with watermark saved → {out_path}")
 
+def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, height=1080):
+    """
+    Encode frames directly from memory by piping raw RGB data to ffmpeg stdin.
+    This eliminates the need for intermediate PNG files.
+
+    Args:
+        frames: List of numpy arrays (H, W, 3) uint8 RGB frames
+        out_path: Output MP4 file path
+        fps: Frames per second
+        skip_first: Number of initial frames to skip
+        width: Frame width
+        height: Frame height
+    """
+    import subprocess
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        print("[WARN] ffmpeg not found; cannot encode video.")
+        return
+
+    if not frames or len(frames) <= skip_first:
+        print("[WARN] No frames to encode after skipping.")
+        return
+
+    # Skip first N frames
+    frames_to_encode = frames[skip_first:]
+
+    # Watermark filter (same as before)
+    watermark_filter = (
+        "drawtext=text='scan2wall.com':"
+        "fontsize=32:"
+        "fontcolor=white@0.8:"
+        "x=w-tw-20:"
+        "y=h-th-20:"
+        "shadowcolor=black@0.6:"
+        "shadowx=2:shadowy=2"
+    )
+
+    # FFmpeg command: read raw RGB frames from stdin
+    cmd = [
+        ffmpeg, "-y",
+        "-f", "rawvideo",              # Input format: raw video
+        "-pix_fmt", "rgb24",            # Pixel format: RGB 24-bit
+        "-s", f"{width}x{height}",      # Frame size
+        "-r", str(fps),                 # Frame rate
+        "-i", "pipe:0",                 # Read from stdin
+        "-vf", watermark_filter,        # Apply watermark
+        "-c:v", "libx264",              # H.264 codec
+        "-pix_fmt", "yuv420p",          # Output pixel format
+        "-movflags", "+faststart",      # Enable fast start for web streaming
+        out_path
+    ]
+
+    # Start ffmpeg process
+    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    try:
+        # Write each frame to ffmpeg stdin
+        for frame in frames_to_encode:
+            # Ensure frame is contiguous in memory for efficient writing
+            if not frame.flags['C_CONTIGUOUS']:
+                frame = np.ascontiguousarray(frame)
+            process.stdin.write(frame.tobytes())
+
+        # Close stdin to signal end of input
+        process.stdin.close()
+
+        # Wait for ffmpeg to finish
+        process.wait()
+
+        if process.returncode == 0:
+            print(f"[INFO] MP4 with watermark saved → {out_path}")
+        else:
+            stderr_output = process.stderr.read().decode()
+            print(f"[ERROR] ffmpeg failed: {stderr_output}")
+
+    except Exception as e:
+        print(f"[ERROR] Failed to encode video: {e}")
+        if process.poll() is None:
+            process.kill()
+    finally:
+        if process.stderr:
+            process.stderr.close()
+
 # HTTP server
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -332,6 +416,9 @@ while app_interface.is_running():
                 # Start timing
                 sim_start_time = time.time()
 
+                # Initialize timing trackers
+                timing_cleanup_start = sim_start_time
+
                 # Extract params
                 usd_path = data['usd_path']
                 out_dir = data.get('out_dir', '/workspace/s2w-data/recordings')
@@ -368,7 +455,10 @@ while app_interface.is_running():
                 sim_context.step()
                 app_interface.update()
                 print("✅ Cleanup done")
-        
+
+                timing_cleanup_end = time.time()
+                timing_camera_start = timing_cleanup_end
+
                 # === CREATE OR REUSE CAMERAS ===
                 if camera is None:
                     print("📷 Creating static camera (first time)")
@@ -432,13 +522,18 @@ while app_interface.is_running():
                     print("✅ Follow camera created and initialized")
                 else:
                     print("📷 Reusing existing follow camera")
-        
-                # BUILD SCENE
+
+                timing_camera_end = time.time()
+                timing_scene_start = timing_camera_end
+
                 # BUILD SCENE
                 print("🏗️  Building scene...")
                 design_scene(usd_path, scaling_factor)
                 build_wall("/World/Objects/Wall", width=15, height=20, brick_width=0.3, brick_height=0.15, brick_depth=0.15, gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
-                
+
+                timing_scene_end = time.time()
+                timing_physics_init_start = timing_scene_end
+
                 # Create RigidObject wrapper AFTER scene is built
                 from isaaclab.assets import RigidObject, RigidObjectCfg
                 obj_cfg = RigidObjectCfg(prim_path="/World/Objects/custom_obj", spawn=None)
@@ -457,22 +552,27 @@ while app_interface.is_running():
                 # Update buffers to populate the data attribute
                 rigid_obj.update(dt)
 
+                # Ensure output directory exists
                 os.makedirs(out_dir, exist_ok=True)
-                frames_dir_static = os.path.join(out_dir, "frames_static")
-                frames_dir_follow = os.path.join(out_dir, "frames_follow")
 
-                if os.path.isdir(frames_dir_static):
-                    shutil.rmtree(frames_dir_static)
-                if os.path.isdir(frames_dir_follow):
-                    shutil.rmtree(frames_dir_follow)
-
-                os.makedirs(frames_dir_static)
-                os.makedirs(frames_dir_follow)
+                # Initialize frame storage lists (in memory, no disk I/O!)
+                frames_static = []
+                frames_follow = []
                 
                 steps = max(1, video_length)
                 captured = 0
                 velocity_applied = False
                 pause_frames = 50  # 1 second pause at 50 FPS
+
+                timing_physics_init_end = time.time()
+                timing_loop_start = timing_physics_init_end
+
+                # Initialize loop timing accumulators
+                timing_physics_step_total = 0.0
+                timing_camera_render_total = 0.0
+                timing_gpu_transfer_total = 0.0
+                timing_transform_update_total = 0.0
+                # Note: No more image_io timing - we store frames in memory!
 
                 print(f"🎬 Running {steps} simulation steps (1s pause, then throw)...")
                 for i in range(steps):
@@ -490,7 +590,10 @@ while app_interface.is_running():
                         velocity_applied = True
                         print("✅ Velocity applied!")
 
+                    # Time physics step
+                    t_physics_start = time.time()
                     sim_context.step()
+                    timing_physics_step_total += time.time() - t_physics_start
 
                     if video and (i % 1) == 0:
                         app_interface.update()
@@ -505,6 +608,7 @@ while app_interface.is_running():
                         follow_pos = Gf.Vec3d(float(obj_pos[0]), float(obj_pos[1]), float(obj_pos[2])) + follow_offset
 
                         # Update follow camera transform (position only, keep rotation fixed)
+                        t_transform_start = time.time()
                         follow_cam_prim = stage.GetPrimAtPath("/World/FollowCamera")
                         if follow_cam_prim.IsValid():
                             from pxr import UsdGeom
@@ -515,13 +619,16 @@ while app_interface.is_running():
                             # Quaternion (w, x, y, z) = (0.7071, 0.7071, 0, 0) is 90° around X-axis
                             # This rotates camera from looking down -Z to looking forward +Y
                             xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(0.7071, 0.7071, 0.0, 0.0))
+                        timing_transform_update_total += time.time() - t_transform_start
 
                         # === CAPTURE FROM STATIC CAMERA ===
+                        t_camera_start = time.time()
                         camera.update(dt)
+                        timing_camera_render_total += time.time() - t_camera_start
                         rgb_data_static = camera.data.output["rgb"]
 
-                        frame_path_static = os.path.join(frames_dir_static, f"rgb_{captured:05d}.png")
-
+                        # Time GPU to CPU transfer
+                        t_transfer_start = time.time()
                         if hasattr(rgb_data_static, 'cpu'):
                             rgb_data_static = rgb_data_static.cpu().numpy()
 
@@ -529,15 +636,19 @@ while app_interface.is_running():
                             rgb_data_static = rgb_data_static[0]
 
                         rgb_uint8_static = (rgb_data_static * 255).astype('uint8')
-                        # Isaac Lab returns RGB, PIL expects RGB - no conversion needed
-                        PILImage.fromarray(rgb_uint8_static).save(frame_path_static)
+                        timing_gpu_transfer_total += time.time() - t_transfer_start
+
+                        # Store frame in memory (no disk I/O!)
+                        frames_static.append(rgb_uint8_static.copy())
 
                         # === CAPTURE FROM FOLLOW CAMERA ===
+                        t_camera_start = time.time()
                         follow_camera.update(dt)
+                        timing_camera_render_total += time.time() - t_camera_start
                         rgb_data_follow = follow_camera.data.output["rgb"]
 
-                        frame_path_follow = os.path.join(frames_dir_follow, f"rgb_{captured:05d}.png")
-
+                        # Time GPU to CPU transfer
+                        t_transfer_start = time.time()
                         if hasattr(rgb_data_follow, 'cpu'):
                             rgb_data_follow = rgb_data_follow.cpu().numpy()
 
@@ -545,8 +656,10 @@ while app_interface.is_running():
                             rgb_data_follow = rgb_data_follow[0]
 
                         rgb_uint8_follow = (rgb_data_follow * 255).astype('uint8')
-                        # Isaac Lab returns RGB, PIL expects RGB - no conversion needed
-                        PILImage.fromarray(rgb_uint8_follow).save(frame_path_follow)
+                        timing_gpu_transfer_total += time.time() - t_transfer_start
+
+                        # Store frame in memory (no disk I/O!)
+                        frames_follow.append(rgb_uint8_follow.copy())
 
                         captured += 1
 
@@ -563,30 +676,44 @@ while app_interface.is_running():
                     if stage.GetPrimAtPath(path).IsValid():
                         stage.RemovePrim(path)
                 
-                # Mark simulation time (before encoding)
-                sim_end_time = time.time()
-                simulation_time = sim_end_time - sim_start_time
+                # Mark end of simulation loop
+                timing_loop_end = time.time()
 
                 encoding_start_time = time.time()
                 if video:
-                    print("🎥 Encoding videos...")
-                    # Encode static camera video
+                    print(f"🎥 Encoding videos from memory ({len(frames_static)} frames)...")
+                    # Encode static camera video from memory
                     video_filename_static = f"{request_job_id}_static.mp4"
                     out_mp4_static = os.path.join(out_dir, video_filename_static)
                     print("   Encoding static camera view...")
-                    ffmpeg_encode(frames_dir_static, out_mp4_static, fps, skip_first)
-                    shutil.rmtree(frames_dir_static, ignore_errors=True)
+                    ffmpeg_encode_from_memory(frames_static, out_mp4_static, fps, skip_first)
 
-                    # Encode follow camera video
+                    # Encode follow camera video from memory
                     video_filename_follow = f"{request_job_id}_follow.mp4"
                     out_mp4_follow = os.path.join(out_dir, video_filename_follow)
                     print("   Encoding follow camera view...")
-                    ffmpeg_encode(frames_dir_follow, out_mp4_follow, fps, skip_first)
-                    shutil.rmtree(frames_dir_follow, ignore_errors=True)
+                    ffmpeg_encode_from_memory(frames_follow, out_mp4_follow, fps, skip_first)
+
+                    # Clear frames from memory to free RAM
+                    frames_static.clear()
+                    frames_follow.clear()
 
                 encoding_end_time = time.time()
                 encoding_time = encoding_end_time - encoding_start_time
                 total_time = encoding_end_time - sim_start_time
+
+                # Calculate timing breakdown
+                cleanup_time = timing_cleanup_end - timing_cleanup_start
+                camera_setup_time = timing_camera_end - timing_camera_start
+                scene_building_time = timing_scene_end - timing_scene_start
+                physics_init_time = timing_physics_init_end - timing_physics_init_start
+                setup_total_time = timing_loop_start - sim_start_time
+                simulation_loop_time = timing_loop_end - timing_loop_start
+                simulation_total_time = timing_loop_end - sim_start_time
+
+                # Calculate performance metrics
+                fps_achieved = captured / simulation_loop_time if simulation_loop_time > 0 else 0
+                avg_frame_time_ms = (simulation_loop_time * 1000) / captured if captured > 0 else 0
 
                 job_results[job_id] = {
                     "status": "completed",
@@ -595,9 +722,31 @@ while app_interface.is_running():
                     "video_path_static": out_mp4_static,
                     "video_path_follow": out_mp4_follow,
                     "timing": {
-                        "simulation_seconds": round(simulation_time, 2),
+                        # Setup breakdown
+                        "cleanup_seconds": round(cleanup_time, 2),
+                        "camera_setup_seconds": round(camera_setup_time, 2),
+                        "scene_building_seconds": round(scene_building_time, 2),
+                        "physics_init_seconds": round(physics_init_time, 2),
+                        "setup_total_seconds": round(setup_total_time, 2),
+
+                        # Simulation loop breakdown (accumulated over all frames)
+                        "physics_step_seconds": round(timing_physics_step_total, 2),
+                        "camera_render_seconds": round(timing_camera_render_total, 2),
+                        "gpu_transfer_seconds": round(timing_gpu_transfer_total, 2),
+                        "transform_update_seconds": round(timing_transform_update_total, 2),
+                        "simulation_loop_seconds": round(simulation_loop_time, 2),
+                        # Note: No image_io - frames stored in memory, encoded after loop
+
+                        # Encoding
                         "encoding_seconds": round(encoding_time, 2),
-                        "total_seconds": round(total_time, 2)
+
+                        # Totals
+                        "simulation_total_seconds": round(simulation_total_time, 2),
+                        "total_seconds": round(total_time, 2),
+
+                        # Performance metrics
+                        "fps_achieved": round(fps_achieved, 1),
+                        "avg_frame_time_ms": round(avg_frame_time_ms, 1)
                     }
                 }
                 print(f"✅ Simulation {job_id} done ({captured} frames, {total_time:.1f}s total)")
