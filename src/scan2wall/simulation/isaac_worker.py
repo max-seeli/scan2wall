@@ -275,7 +275,7 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     subprocess.run(cmd, check=True)
     print(f"[INFO] MP4 with watermark saved → {out_path}")
 
-def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, height=1080):
+def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, height=1080, use_gpu=True):
     """
     Encode frames directly from memory by piping raw RGB data to ffmpeg stdin.
     This eliminates the need for intermediate PNG files.
@@ -287,6 +287,7 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
         skip_first: Number of initial frames to skip
         width: Frame width
         height: Frame height
+        use_gpu: If True, try GPU encoding (NVENC) first, fallback to CPU if unavailable
     """
     import subprocess
 
@@ -295,7 +296,7 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
         print("[WARN] ffmpeg not found; cannot encode video.")
         return
 
-    if not frames or len(frames) <= skip_first:
+    if len(frames) == 0 or len(frames) <= skip_first:
         print("[WARN] No frames to encode after skipping.")
         return
 
@@ -313,20 +314,44 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
         "shadowx=2:shadowy=2"
     )
 
-    # FFmpeg command: read raw RGB frames from stdin
-    cmd = [
-        ffmpeg, "-y",
-        "-f", "rawvideo",              # Input format: raw video
-        "-pix_fmt", "rgb24",            # Pixel format: RGB 24-bit
-        "-s", f"{width}x{height}",      # Frame size
-        "-r", str(fps),                 # Frame rate
-        "-i", "pipe:0",                 # Read from stdin
-        "-vf", watermark_filter,        # Apply watermark
-        "-c:v", "libx264",              # H.264 codec
-        "-pix_fmt", "yuv420p",          # Output pixel format
-        "-movflags", "+faststart",      # Enable fast start for web streaming
-        out_path
-    ]
+    # Build FFmpeg command based on encoder type
+    if use_gpu:
+        # GPU encoding with NVENC (much faster!)
+        print("[INFO] Using GPU encoding (NVENC)")
+        cmd = [
+            ffmpeg, "-y",
+            "-f", "rawvideo",
+            "-pix_fmt", "rgb24",
+            "-s", f"{width}x{height}",
+            "-r", str(fps),
+            "-i", "pipe:0",
+            "-vf", watermark_filter,
+            "-c:v", "h264_nvenc",       # NVIDIA GPU encoder
+            "-preset", "p4",             # Performance preset (p1=fastest, p7=slowest)
+            "-tune", "hq",               # High quality tuning
+            "-rc", "vbr",                # Variable bitrate
+            "-cq", "23",                 # Constant quality (like CRF)
+            "-b:v", "0",                 # Let VBR handle bitrate
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            out_path
+        ]
+    else:
+        # CPU encoding with libx264
+        print("[INFO] Using CPU encoding (libx264)")
+        cmd = [
+            ffmpeg, "-y",
+            "-f", "rawvideo",
+            "-pix_fmt", "rgb24",
+            "-s", f"{width}x{height}",
+            "-r", str(fps),
+            "-i", "pipe:0",
+            "-vf", watermark_filter,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            out_path
+        ]
 
     # Start ffmpeg process
     process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -349,12 +374,22 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1920, h
             print(f"[INFO] MP4 with watermark saved → {out_path}")
         else:
             stderr_output = process.stderr.read().decode()
-            print(f"[ERROR] ffmpeg failed: {stderr_output}")
+            print(f"[ERROR] ffmpeg encoding failed: {stderr_output}")
+
+            # If GPU encoding failed, retry with CPU
+            if use_gpu:
+                print("[WARN] GPU encoding failed, retrying with CPU encoding...")
+                return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False)
 
     except Exception as e:
         print(f"[ERROR] Failed to encode video: {e}")
         if process.poll() is None:
             process.kill()
+
+        # If GPU encoding failed, retry with CPU
+        if use_gpu:
+            print("[WARN] GPU encoding failed, retrying with CPU encoding...")
+            return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False)
     finally:
         if process.stderr:
             process.stderr.close()
@@ -702,10 +737,10 @@ while app_interface.is_running():
                 # Ensure output directory exists
                 os.makedirs(out_dir, exist_ok=True)
 
-                # Initialize frame storage lists (in memory, no disk I/O!)
-                frames_static = []
-                frames_follow = []
-                
+                # Initialize frame storage lists (keep on GPU during simulation!)
+                frames_static_gpu = []  # Store GPU tensors
+                frames_follow_gpu = []  # Store GPU tensors
+
                 steps = max(1, video_length)
                 captured = 0
                 velocity_applied = False
@@ -774,19 +809,12 @@ while app_interface.is_running():
                         timing_camera_render_total += time.time() - t_camera_start
                         rgb_data_static = camera.data.output["rgb"]
 
-                        # Time GPU to CPU transfer
-                        t_transfer_start = time.time()
-                        if hasattr(rgb_data_static, 'cpu'):
-                            rgb_data_static = rgb_data_static.cpu().numpy()
-
+                        # Keep on GPU - just extract first batch element if needed
                         if rgb_data_static.ndim == 4:
-                            rgb_data_static = rgb_data_static[0]
+                            rgb_data_static = rgb_data_static[0]  # Shape: (H, W, 3)
 
-                        rgb_uint8_static = (rgb_data_static * 255).astype('uint8')
-                        timing_gpu_transfer_total += time.time() - t_transfer_start
-
-                        # Store frame in memory (no disk I/O!)
-                        frames_static.append(rgb_uint8_static.copy())
+                        # Store GPU tensor (clone to avoid overwrite in next iteration)
+                        frames_static_gpu.append(rgb_data_static.clone())
 
                         # === CAPTURE FROM FOLLOW CAMERA ===
                         t_camera_start = time.time()
@@ -794,19 +822,12 @@ while app_interface.is_running():
                         timing_camera_render_total += time.time() - t_camera_start
                         rgb_data_follow = follow_camera.data.output["rgb"]
 
-                        # Time GPU to CPU transfer
-                        t_transfer_start = time.time()
-                        if hasattr(rgb_data_follow, 'cpu'):
-                            rgb_data_follow = rgb_data_follow.cpu().numpy()
-
+                        # Keep on GPU - just extract first batch element if needed
                         if rgb_data_follow.ndim == 4:
-                            rgb_data_follow = rgb_data_follow[0]
+                            rgb_data_follow = rgb_data_follow[0]  # Shape: (H, W, 3)
 
-                        rgb_uint8_follow = (rgb_data_follow * 255).astype('uint8')
-                        timing_gpu_transfer_total += time.time() - t_transfer_start
-
-                        # Store frame in memory (no disk I/O!)
-                        frames_follow.append(rgb_uint8_follow.copy())
+                        # Store GPU tensor (clone to avoid overwrite in next iteration)
+                        frames_follow_gpu.append(rgb_data_follow.clone())
 
                         captured += 1
 
@@ -826,24 +847,71 @@ while app_interface.is_running():
                 # Mark end of simulation loop
                 timing_loop_end = time.time()
 
+                # Batch transfer frames from GPU to CPU (much faster than per-frame)
+                print(f"📦 Batch transferring {len(frames_static_gpu)} frames from GPU to CPU...")
+                t_batch_transfer_start = time.time()
+
+                # Stack tensors and convert to uint8 on GPU
+                import torch
+                frames_static_tensor = torch.stack(frames_static_gpu)  # (N, H, W, 3)
+                frames_follow_tensor = torch.stack(frames_follow_gpu)  # (N, H, W, 3)
+
+                # Convert to uint8 on GPU
+                frames_static_uint8_gpu = (frames_static_tensor * 255).to(torch.uint8)
+                frames_follow_uint8_gpu = (frames_follow_tensor * 255).to(torch.uint8)
+
+                # Single batched transfer to CPU
+                frames_static = frames_static_uint8_gpu.cpu().numpy()
+                frames_follow = frames_follow_uint8_gpu.cpu().numpy()
+
+                t_batch_transfer_end = time.time()
+                batch_transfer_time = t_batch_transfer_end - t_batch_transfer_start
+                print(f"✅ Batch transfer complete in {batch_transfer_time:.2f}s")
+
+                # Clear GPU tensors to free VRAM
+                frames_static_gpu.clear()
+                frames_follow_gpu.clear()
+                del frames_static_tensor, frames_follow_tensor, frames_static_uint8_gpu, frames_follow_uint8_gpu
+
                 encoding_start_time = time.time()
+                encoding_static_time = 0
+                encoding_follow_time = 0
                 if video:
                     print(f"🎥 Encoding videos from memory ({len(frames_static)} frames)...")
-                    # Encode static camera video from memory
+
+                    # Encode both videos in parallel using ThreadPoolExecutor
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+
                     video_filename_static = f"{request_job_id}_static.mp4"
                     out_mp4_static = os.path.join(out_dir, video_filename_static)
-                    print("   Encoding static camera view...")
-                    ffmpeg_encode_from_memory(frames_static, out_mp4_static, fps, skip_first)
 
-                    # Encode follow camera video from memory
                     video_filename_follow = f"{request_job_id}_follow.mp4"
                     out_mp4_follow = os.path.join(out_dir, video_filename_follow)
-                    print("   Encoding follow camera view...")
-                    ffmpeg_encode_from_memory(frames_follow, out_mp4_follow, fps, skip_first)
 
-                    # Clear frames from memory to free RAM
-                    frames_static.clear()
-                    frames_follow.clear()
+                    def encode_video(frames, out_path, camera_name):
+                        """Encode a single video and return timing info"""
+                        start = time.time()
+                        print(f"   Encoding {camera_name} camera view...")
+                        ffmpeg_encode_from_memory(frames, out_path, fps, skip_first)
+                        elapsed = time.time() - start
+                        print(f"   ✅ {camera_name} camera encoded in {elapsed:.2f}s")
+                        return camera_name, elapsed
+
+                    # Submit both encoding tasks to run in parallel
+                    with ThreadPoolExecutor(max_workers=2) as executor:
+                        future_static = executor.submit(encode_video, frames_static, out_mp4_static, "static")
+                        future_follow = executor.submit(encode_video, frames_follow, out_mp4_follow, "follow")
+
+                        # Wait for both to complete and collect timing
+                        for future in as_completed([future_static, future_follow]):
+                            camera_name, elapsed = future.result()
+                            if camera_name == "static":
+                                encoding_static_time = elapsed
+                            else:
+                                encoding_follow_time = elapsed
+
+                    # Clear frames from memory to free RAM (NumPy arrays - delete references)
+                    del frames_static, frames_follow
 
                 encoding_end_time = time.time()
                 encoding_time = encoding_end_time - encoding_start_time
@@ -879,13 +947,17 @@ while app_interface.is_running():
                         # Simulation loop breakdown (accumulated over all frames)
                         "physics_step_seconds": round(timing_physics_step_total, 2),
                         "camera_render_seconds": round(timing_camera_render_total, 2),
-                        "gpu_transfer_seconds": round(timing_gpu_transfer_total, 2),
                         "transform_update_seconds": round(timing_transform_update_total, 2),
                         "simulation_loop_seconds": round(simulation_loop_time, 2),
-                        # Note: No image_io - frames stored in memory, encoded after loop
+                        # Note: Frames kept on GPU during loop, batch transferred after
 
-                        # Encoding
+                        # Batch GPU→CPU transfer (after simulation loop)
+                        "batch_gpu_transfer_seconds": round(batch_transfer_time, 2),
+
+                        # Encoding (parallel execution)
                         "encoding_seconds": round(encoding_time, 2),
+                        "encoding_static_seconds": round(encoding_static_time, 2),
+                        "encoding_follow_seconds": round(encoding_follow_time, 2),
 
                         # Totals
                         "simulation_total_seconds": round(simulation_total_time, 2),

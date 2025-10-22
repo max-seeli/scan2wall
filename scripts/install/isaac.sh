@@ -306,13 +306,36 @@ fi
 echo ""
 
 # ============================================================================
-# Install ffmpeg in Container
+# Install ffmpeg with NVENC support in Container
 # ============================================================================
 
-echo "Installing ffmpeg in vscode container for video encoding..."
-docker exec vscode bash -c "apt-get update -qq && apt-get install -y ffmpeg" > /dev/null 2>&1
+echo "Installing ffmpeg with NVENC support in vscode container..."
+docker exec vscode bash -c '
+    set -e
+    apt-get update -qq
+
+    # Install ffmpeg with NVENC support
+    # The default Ubuntu ffmpeg has NVENC support if nvidia drivers are present
+    apt-get install -y ffmpeg
+
+    # Verify NVENC support
+    if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_nvenc; then
+        echo "✓ ffmpeg with NVENC support installed"
+    else
+        echo "⚠ ffmpeg installed but NVENC not detected (will fallback to CPU)"
+    fi
+' > /dev/null 2>&1
+
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓${NC} ffmpeg installed in vscode container"
+    echo -e "${GREEN}✓${NC} ffmpeg with NVENC support installed in vscode container"
+
+    # Verify NVENC is available
+    if docker exec vscode bash -c "ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_nvenc"; then
+        echo -e "${GREEN}✓${NC} NVENC encoder detected and ready"
+    else
+        echo -e "${YELLOW}⚠${NC} NVENC encoder not detected - GPU encoding will fallback to CPU"
+        echo "    This is normal if NVIDIA drivers are not properly passed to the container"
+    fi
 else
     echo -e "${YELLOW}⚠${NC} Could not install ffmpeg automatically. You may need to install it manually."
 fi
