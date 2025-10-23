@@ -17,9 +17,9 @@ Total processing time: **~150s first run**, **~65-75s subsequent runs** (model c
 
 **Quick Start:**
 ```bash
-./start.sh auto     # Automated with tmux
+./scripts/start.sh auto     # Automated with tmux
 # OR
-./start.sh          # Manual instructions for 3 terminals
+./scripts/start.sh          # Manual instructions for 3 terminals
 ```
 
 **Manual Terminal Setup:**
@@ -34,12 +34,13 @@ python main.py --listen 0.0.0.0 --port 8188
 
 **Terminal 2 - Upload Server:**
 ```bash
-python 3d_gen/image_collection/run.py  # Runs on port 49100
+source .venv/bin/activate
+python -m scan2wall.server.run  # Runs on port 49100
 ```
 
 **Isaac Worker** (runs automatically in Docker container):
-- Persistent FastAPI service on port 8090 inside `vscode` container
-- Started automatically by `start.sh`
+- Persistent HTTP server on port 8090 inside `vscode` container (uses Python's http.server)
+- Started automatically by `scripts/start.sh`
 - Handles mesh conversion and simulation requests
 - Logs: `data/logs/isaac_worker.log`
 
@@ -47,18 +48,20 @@ python 3d_gen/image_collection/run.py  # Runs on port 49100
 
 **Test without phone (desktop upload):**
 ```bash
-python 3d_gen/image_collection/run_desktop.py
+source .venv/bin/activate
+python -m scan2wall.server.run_desktop
 ```
 
 **Test material property inference:**
 ```bash
-cd 3d_gen/material_properties
-python get_object_properties.py <image_path>
+source .venv/bin/activate
+python -m scan2wall.inference.get_object_properties <image_path>
 ```
 
 **Simple video viewer for testing:**
 ```bash
-python 3d_gen/image_collection/test.py  # Video viewer on port 8000
+source .venv/bin/activate
+python -m scan2wall.server.test  # Video viewer on port 8000
 ```
 
 **View all jobs (admin):**
@@ -147,60 +150,62 @@ docker compose up -d
 ```
 Phone Upload (port 49100)
     ↓
-FastAPI Server (3d_gen/image_collection/app/server.py)
+FastAPI Server (src/scan2wall/server/server.py)
     ↓
-ML Pipeline (ml_pipeline.py)
+Pipeline Coordinator (src/scan2wall/pipeline/coordinator.py)
     ├─→ [Parallel] Gemini 2.0 Flash API (material properties)
     └─→ ComfyUI API (port 8188) - Direct integration
         └─→ Hunyuan 3D 2.1 (GLB mesh generation, ~30-60s)
             ↓
-Isaac Worker API (port 8090, inside Docker)
+Isaac Worker HTTP API (port 8090, inside Docker)
     ├─→ POST /convert (GLB → USD with physics)
-    └─→ POST /run_simulation (throw simulation + video)
+    └─→ POST /run_simulation (throw simulation + videos)
         ↓
-recordings/sim_run.mp4
+recordings/{job_id}_static.mp4 (static camera)
+recordings/{job_id}_follow.mp4 (follow camera)
 ```
 
 ### Key Components
 
-**1. Upload Server** (`3d_gen/image_collection/app/server.py`)
+**1. Upload Server** (`src/scan2wall/server/server.py`)
 - FastAPI web server on port 49100
 - Handles image uploads, validation, job tracking
 - In-memory job storage (JOBS dict)
-- Background task processing via `ml_pipeline.py`
-- Endpoints: `/`, `/upload`, `/job/{job_id}`, `/jobs`, `/video/{job_id}`
+- Background task processing via `coordinator.py`
+- Endpoints: `/`, `/upload`, `/job/{job_id}`, `/jobs`, `/video/{job_id}`, `/asset/{job_id}/*`
 - Videos automatically display on upload page when job completes
 
-**2. ML Pipeline** (`3d_gen/image_collection/ml_pipeline.py`)
+**2. Pipeline Coordinator** (`src/scan2wall/pipeline/coordinator.py`)
 - Orchestrates the entire processing flow
 - Talks directly to ComfyUI API (port 8188) - no wrapper needed
 - Calls Gemini API for material inference
-- Communicates with Isaac Worker API (port 8090) for conversion and simulation
+- Communicates with Isaac Worker HTTP API (port 8090) for conversion and simulation
 - Key functions:
   - `process_image(job_id, image_path, jobs_dict)` - Main orchestration
   - `generate_mesh_via_comfyui(image_path, job_id)` - Direct ComfyUI integration
   - `convert_mesh(out_file, fname, mass, df, ds)` - Calls Isaac worker `/convert`
-  - `make_throwing_anim(file, scaling, job_id)` - Calls Isaac worker `/run_simulation`
+  - `make_throwing_anim(file, scaling, job_id, status_updater)` - Calls Isaac worker `/run_simulation`
 
-**3. Material Inference** (`3d_gen/material_properties/get_object_properties.py`)
+**3. Material Inference** (`src/scan2wall/inference/get_object_properties.py`)
 - Uses Gemini 2.0 Flash multimodal LLM
 - Returns JSON with: mass, dimensions, friction coefficients, object type
-- Controlled by `USE_LLM` flag in ml_pipeline.py
+- Controlled by `USE_LLM` flag in coordinator.py
 
 **4. ComfyUI Integration** (Direct API)
-- ML pipeline posts workflow JSON directly to ComfyUI's `/prompt` endpoint
+- Pipeline coordinator posts workflow JSON directly to ComfyUI's `/prompt` endpoint
 - Polls `/history/{prompt_id}` for completion
 - Retrieves GLB from output directory
-- Uses workflow: `3d_gen/workflows/image-to-texture-mesh.json`
+- Uses workflow: `3d_gen/ComfyUI/custom_nodes/ComfyUI-MeshCraft/workflows/image-to-texture-mesh-api-proper.json`
 
 **5. Isaac Worker** (`src/scan2wall/simulation/isaac_worker.py`)
-- Persistent FastAPI service running inside Docker `vscode` container
+- Persistent HTTP server running inside Docker `vscode` container (uses Python's http.server)
 - Listens on port 8090 (accessible from host)
 - Manages Isaac Lab's main Kit loop for GPU-accelerated physics
 - **Endpoints:**
   - `GET /` - Health check (returns status and queue size)
   - `POST /convert` - Convert GLB → USD with physics properties
-  - `POST /run_simulation` - Run throw simulation and generate video
+  - `POST /run_simulation` - Run throw simulation and generate videos (static + follow camera)
+  - `POST /create_base_scene` - Create base scene with pyramid
 - Processes jobs sequentially on Isaac's main thread
 - Reuses camera between simulations for efficiency
 
@@ -212,12 +217,15 @@ recordings/sim_run.mp4
 
 **7. Simulation** (via Isaac Worker `/run_simulation`)
 - Loads USD object into Isaac Sim scene
-- Creates 20-level pyramid target (blue cubes)
-- Applies throwing velocity: 17 m/s forward
-- Records 200 physics steps (~4 seconds) at 1920×1080
+- Creates pyramid target (6 levels by default, configurable up to 20 levels)
+- Applies throwing velocity: 13 m/s forward + 6 m/s upward (magnitude ≈14.3 m/s)
+- Records from two camera angles: static view and follow camera
+- Records 200 physics steps (~4 seconds) at 1280×720
 - Skips first 10 frames (warmup period)
-- Encodes with ffmpeg (H.264) to `data/recordings/{job_id}_sim.mp4`
-- Each job gets unique video file (no overwriting)
+- Encodes with ffmpeg (NVENC H.264 GPU encoding for speed)
+- Outputs two videos per job:
+  - `data/recordings/{job_id}_static.mp4` (fixed camera view)
+  - `data/recordings/{job_id}_follow.mp4` (follow camera view)
 
 ### Path Configuration
 
@@ -247,33 +255,37 @@ All paths support environment variable overrides via `.env` file.
 
 **Docker Architecture:**
 - Isaac Lab cloned to: `isaac/isaac-launchable/`
-- Docker Compose file: `isaac/isaac-launchable/isaac-lab/docker-compose.yml`
-- Container mounts:
-  - Host `/home/ubuntu/scan2wall/src/scan2wall/simulation` → Container `/workspace/s2w-scripts`
-  - Host `/home/ubuntu/scan2wall/data` → Container `/workspace/s2w-data`
-  - Host `/home/ubuntu/scan2wall/isaac/usd_files` → Container `/workspace/usd_files`
+- Docker Compose files:
+  - Base: `isaac/isaac-launchable/isaac-lab/docker-compose.yml`
+  - Override: `isaac/isaac-launchable/isaac-lab/docker-compose.override.yml` (scan2wall-specific mounts)
+- Container mounts (configured in docker-compose.override.yml):
+  - Host `{PROJECT_ROOT}/src/scan2wall/simulation` → Container `/workspace/s2w-scripts`
+  - Host `{PROJECT_ROOT}/data` → Container `/workspace/s2w-data`
 - Isaac Lab inside container at: `/workspace/isaaclab`
+- Note: Setup scripts auto-configure paths based on actual installation directory
 
 **Key Path Mappings (Host → Container):**
-- `/home/ubuntu/scan2wall/data/uploaded_pictures` → `/workspace/s2w-data/uploaded_pictures`
-- `/home/ubuntu/scan2wall/data/reconstructed_geoms` → `/workspace/s2w-data/reconstructed_geoms`
-- `/home/ubuntu/scan2wall/data/usd_files` → `/workspace/s2w-data/usd_files`
-- `/home/ubuntu/scan2wall/data/recordings` → `/workspace/s2w-data/recordings`
-- `/home/ubuntu/scan2wall/src/scan2wall/simulation` → `/workspace/s2w-scripts`
+- `{PROJECT_ROOT}/data/uploaded_pictures` → `/workspace/s2w-data/uploaded_pictures`
+- `{PROJECT_ROOT}/data/reconstructed_geoms` → `/workspace/s2w-data/reconstructed_geoms`
+- `{PROJECT_ROOT}/data/usd_files` → `/workspace/s2w-data/usd_files`
+- `{PROJECT_ROOT}/data/recordings` → `/workspace/s2w-data/recordings`
+- `{PROJECT_ROOT}/src/scan2wall/simulation` → `/workspace/s2w-scripts`
 
 ## Important Technical Details
 
 ### ComfyUI Workflow
 - Node 112: Load Image
-- Node 89: Save Model (GLB output)
-- Custom nodes include: Hunyuan3d-2-1, Inspyrenet-Rembg, LayerStyle, KJNodes
+- Node 89: Save Model (GLB output with filename prefix)
+- Custom nodes include: ComfyUI-MeshCraft (Hunyuan3d-2-1), Inspyrenet-Rembg, LayerStyle, KJNodes
+- Workflow located in: `3d_gen/ComfyUI/custom_nodes/ComfyUI-MeshCraft/workflows/`
 - Models stored in `3d_gen/ComfyUI/models/` (~8GB)
 
 ### Physics Configuration
 - Default mass: 1.0 kg (overridden by Gemini)
 - Collision approximation: convexDecomposition (configurable)
 - Physics timestep: 0.01s (100 FPS)
-- Video output: 1920×1080, H.264, 50 FPS
+- Video output: 1280×720, H.264 NVENC GPU encoding, 50 FPS (configurable)
+- Two camera views: static and follow
 
 ### Job States
 Jobs flow through: `queued` → `processing` → `done` / `error`
@@ -327,11 +339,12 @@ See `.env.example` for complete configuration template.
 **CUDA out of memory:** Close other GPU applications, restart ComfyUI
 
 **Import errors (ModuleNotFoundError):**
-The codebase uses direct imports within the `3d_gen/` directory. Imports are handled via `sys.path.insert()` in:
-- `3d_gen/image_collection/ml_pipeline.py`
-- `3d_gen/standalone_video.py`
-
-No package installation required - imports resolve at runtime.
+The codebase is now structured as a proper Python package under `src/scan2wall/`.
+Install the package with:
+```bash
+uv sync  # Installs scan2wall package and all dependencies
+```
+Then use module imports like `python -m scan2wall.server.run`
 
 **Missing dependencies:**
 Dependencies are managed via `uv` (see `uv.lock`). To install:
@@ -375,33 +388,39 @@ docker compose logs vscode  # View logs
 - **First 3D generation takes ~150s** (model loading + full pipeline), **subsequent ones ~55-60s** (models cached in VRAM)
 - ComfyUI model caching provides ~64% speedup on subsequent runs
 - Device placement fix applied to handle cached models correctly (prevents CUDA errors)
-- Set `USE_LLM = False` in ml_pipeline.py to skip Gemini inference (faster testing with default physics)
-- Set `USE_SCALING = False` to disable object scaling (use 1.0)
-- Videos saved to `data/recordings/` directory
-- Frame sequences temporarily saved to `recordings/frames/` then deleted after encoding
+- Set `USE_LLM = False` in `src/scan2wall/pipeline/coordinator.py` to skip Gemini inference (faster testing with default physics)
+- Set `USE_SCALING = False` in coordinator.py to disable object scaling (use 1.0)
+- Videos saved to `data/recordings/` directory with two views per job (static + follow)
 - Simulation skips first 10 frames to avoid warmup artifacts
 - Isaac Worker runs persistently - it reuses the camera and scene between jobs for efficiency
-- Path conversion happens automatically in ML pipeline (host paths → container paths)
-- The Isaac Worker API allows parallel development: you can test conversion/simulation independently
+- Path conversion happens automatically in pipeline coordinator (host paths → container paths)
+- The Isaac Worker HTTP API allows parallel development: you can test conversion/simulation independently
 - Check worker queue status with `curl http://localhost:8090/` to see if jobs are pending
 
 ## Project Structure Note
 
-The source code is in `3d_gen/`. Imports now use direct relative imports within the `3d_gen/` directory structure (the `scan2wall` package import dependency has been removed). Key files:
-- `3d_gen/image_collection/` - Upload server and web UI
-- `3d_gen/material_properties/` - Gemini integration
-- `src/scan2wall/simulation/` - Isaac Sim integration (isaac_worker.py)
-- `3d_gen/workflows/` - ComfyUI workflow JSON files
+The project is organized as a proper Python package:
+- `src/scan2wall/` - Main package source code
+  - `server/` - Upload server and web UI
+  - `pipeline/` - Processing coordinator
+  - `inference/` - Gemini material property inference
+  - `simulation/` - Isaac Sim integration (isaac_worker.py)
+  - `cli/` - Command-line interface
+- `3d_gen/ComfyUI/` - ComfyUI installation
+  - `custom_nodes/ComfyUI-MeshCraft/workflows/` - 3D mesh generation workflow JSON files
+- `data/` - Runtime data (uploads, meshes, recordings, logs)
+- `isaac/isaac-launchable/isaac-lab/` - Isaac Lab Docker setup
 
 ## Tech Stack Summary
 - **Python**: 3.10+ (managed via `uv` package manager)
-- **3D Generation**: Hunyuan 3D 2.1 via ComfyUI
+- **3D Generation**: Hunyuan 3D 2.1 via ComfyUI (with ComfyUI-MeshCraft)
 - **Material Analysis**: Google Gemini 2.0 Flash
 - **Physics**: NVIDIA Isaac Sim (Isaac Lab) - Docker-based deployment
-- **Backend**: FastAPI (upload server + Isaac Worker API)
+- **Backend**: FastAPI (upload server) + Python http.server (Isaac Worker)
 - **Frontend**: HTML5 + vanilla JavaScript
 - **Container Runtime**: Docker + Docker Compose
-- **Video Encoding**: FFmpeg
+- **Video Encoding**: FFmpeg with NVENC GPU acceleration
+- **Package Management**: uv (fast Python package manager)
 
 ## System Ports
 
