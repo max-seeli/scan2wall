@@ -42,6 +42,163 @@ print("✅ Isaac Lab initialized")
 
 # Helper functions
 
+def linear_to_srgb_gpu(linear_rgb):
+    """
+    Convert linear RGB to sRGB using proper gamma correction (GPU-accelerated).
+
+    Args:
+        linear_rgb: torch.Tensor of shape (..., 3) with values in [0, 1] (linear RGB)
+
+    Returns:
+        torch.Tensor of same shape with sRGB gamma applied
+    """
+    # Clamp to valid range
+    linear_rgb = torch.clamp(linear_rgb, 0.0, 1.0)
+
+    # sRGB transfer function
+    # For values <= 0.0031308: sRGB = 12.92 * linear
+    # For values > 0.0031308: sRGB = 1.055 * linear^(1/2.4) - 0.055
+    threshold = 0.0031308
+    a = 0.055
+
+    srgb = torch.where(
+        linear_rgb <= threshold,
+        12.92 * linear_rgb,
+        (1 + a) * torch.pow(linear_rgb, 1.0 / 2.4) - a
+    )
+
+    return srgb
+
+def srgb_to_linear_gpu(srgb):
+    """
+    Convert sRGB to linear RGB (inverse of linear_to_srgb_gpu).
+
+    Args:
+        srgb: torch.Tensor of shape (..., 3) with values in [0, 1] (sRGB gamma-corrected)
+
+    Returns:
+        torch.Tensor of same shape with linear RGB values
+    """
+    # Clamp to valid range
+    srgb = torch.clamp(srgb, 0.0, 1.0)
+
+    # Inverse sRGB transfer function
+    # For values <= 0.04045: linear = sRGB / 12.92
+    # For values > 0.04045: linear = ((sRGB + 0.055) / 1.055) ^ 2.4
+    threshold = 0.04045
+    a = 0.055
+
+    linear = torch.where(
+        srgb <= threshold,
+        srgb / 12.92,
+        torch.pow((srgb + a) / (1 + a), 2.4)
+    )
+
+    return linear
+
+def inspect_pixel_values(rgb_tensor, label="Camera Output"):
+    """
+    Analyze pixel value distribution to determine colorspace.
+
+    Linear RGB: Most values cluster in 0.0-0.3 range (darker)
+    sRGB: Values spread more evenly across 0.0-1.0 range (brighter)
+
+    Args:
+        rgb_tensor: torch.Tensor of shape (H, W, 3) or (N, H, W, 3)
+        label: String label for logging
+    """
+    if rgb_tensor.ndim == 4:
+        rgb_tensor = rgb_tensor[0]  # Take first frame if batched
+
+    # Convert to CPU for analysis
+    rgb_np = rgb_tensor.cpu().numpy()
+
+    # Calculate statistics
+    min_val = rgb_np.min()
+    max_val = rgb_np.max()
+    mean_val = rgb_np.mean()
+    median_val = np.median(rgb_np)
+
+    # Calculate histogram bins
+    hist, bins = np.histogram(rgb_np.flatten(), bins=10, range=(0.0, 1.0))
+
+    # Calculate percentage in lower range (indicator of linear vs sRGB)
+    low_range_pct = (rgb_np < 0.3).sum() / rgb_np.size * 100
+    mid_range_pct = ((rgb_np >= 0.3) & (rgb_np < 0.7)).sum() / rgb_np.size * 100
+    high_range_pct = (rgb_np >= 0.7).sum() / rgb_np.size * 100
+
+    print(f"\n{'='*60}")
+    print(f"🔍 Pixel Value Analysis: {label}")
+    print(f"{'='*60}")
+    print(f"  Min:    {min_val:.4f}")
+    print(f"  Max:    {max_val:.4f}")
+    print(f"  Mean:   {mean_val:.4f}")
+    print(f"  Median: {median_val:.4f}")
+    print(f"\n  Distribution:")
+    print(f"    Low (0.0-0.3):   {low_range_pct:5.1f}%  {'█' * int(low_range_pct/5)}")
+    print(f"    Mid (0.3-0.7):   {mid_range_pct:5.1f}%  {'█' * int(mid_range_pct/5)}")
+    print(f"    High (0.7-1.0):  {high_range_pct:5.1f}%  {'█' * int(high_range_pct/5)}")
+    print(f"\n  💡 Heuristic:")
+    if low_range_pct > 60:
+        print(f"     Likely LINEAR RGB (dark bias)")
+    elif mid_range_pct > 40:
+        print(f"     Likely sRGB (gamma-corrected, even distribution)")
+    else:
+        print(f"     Ambiguous - check visual comparison")
+    print(f"{'='*60}\n")
+
+    return {
+        "min": min_val,
+        "max": max_val,
+        "mean": mean_val,
+        "median": median_val,
+        "low_pct": low_range_pct,
+        "mid_pct": mid_range_pct,
+        "high_pct": high_range_pct
+    }
+
+def save_color_comparison(rgb_tensor, out_dir, frame_idx=0):
+    """
+    Save the same frame with 4 different color treatments for comparison.
+
+    Args:
+        rgb_tensor: torch.Tensor of shape (H, W, 3) - raw camera output (0-1 float)
+        out_dir: Directory to save comparison images
+        frame_idx: Frame number for filename
+
+    Saves:
+        debug_a_raw.png - Just * 255 (original broken version)
+        debug_b_lin2srgb.png - Linear→sRGB gamma correction (current "fix")
+        debug_c_srgb2lin.png - sRGB→Linear (inverse operation)
+        debug_d_gamma22.png - Simple power gamma 2.2
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Version A: Raw (just * 255) - what we had before
+    raw = (rgb_tensor * 255.0).round().to(torch.uint8).cpu().numpy()
+    PILImage.fromarray(raw, mode="RGB").save(os.path.join(out_dir, f"debug_{frame_idx:03d}_a_raw.png"))
+
+    # Version B: Linear→sRGB (current "fix")
+    lin2srgb = linear_to_srgb_gpu(rgb_tensor)
+    lin2srgb_u8 = (lin2srgb * 255.0).round().to(torch.uint8).cpu().numpy()
+    PILImage.fromarray(lin2srgb_u8, mode="RGB").save(os.path.join(out_dir, f"debug_{frame_idx:03d}_b_lin2srgb.png"))
+
+    # Version C: sRGB→Linear (inverse)
+    srgb2lin = srgb_to_linear_gpu(rgb_tensor)
+    srgb2lin_u8 = (srgb2lin * 255.0).round().to(torch.uint8).cpu().numpy()
+    PILImage.fromarray(srgb2lin_u8, mode="RGB").save(os.path.join(out_dir, f"debug_{frame_idx:03d}_c_srgb2lin.png"))
+
+    # Version D: Simple power gamma 2.2 (old-school gamma correction)
+    gamma22 = torch.pow(torch.clamp(rgb_tensor, 0.0, 1.0), 1.0 / 2.2)
+    gamma22_u8 = (gamma22 * 255.0).round().to(torch.uint8).cpu().numpy()
+    PILImage.fromarray(gamma22_u8, mode="RGB").save(os.path.join(out_dir, f"debug_{frame_idx:03d}_d_gamma22.png"))
+
+    print(f"💾 Saved 4-way color comparison to {out_dir}/debug_{frame_idx:03d}_*.png")
+    print(f"   A: Raw (* 255 only)")
+    print(f"   B: Linear→sRGB (current fix)")
+    print(f"   C: sRGB→Linear (inverse)")
+    print(f"   D: Gamma 2.2 power curve")
+
 def create_watermark_tensor(width, height, device='cuda:0'):
     """
     Create a watermark as a GPU tensor for fast overlay.
@@ -196,21 +353,21 @@ def create_base_scene_usd(output_path="/workspace/s2w-scripts/scenes/throw_again
     )
     cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
 
-    # Add sky dome light
+    # Add sky dome light (REDUCED from 2000 to fix overexposure)
     cfg_dome = sim_utils.DomeLightCfg(
-        intensity=2000.0,
+        intensity=500.0,  # Was 2000
         color=(0.3, 0.6, 1.0)
     )
     cfg_dome.func("/World/skyDome", cfg_dome)
 
-    # Add 3-point lighting
-    cfg_key = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 0.95, 0.85))
+    # Add 3-point lighting (ALL REDUCED by 75% to fix overexposure)
+    cfg_key = sim_utils.DistantLightCfg(intensity=500.0, color=(1.0, 0.95, 0.85))  # Was 2000
     cfg_key.func("/World/lightKey", cfg_key, translation=(-3, -2, 8))
 
-    cfg_fill = sim_utils.DistantLightCfg(intensity=800.0, color=(0.9, 0.9, 1.0))
+    cfg_fill = sim_utils.DistantLightCfg(intensity=200.0, color=(0.9, 0.9, 1.0))  # Was 800
     cfg_fill.func("/World/lightFill", cfg_fill, translation=(3, -1, 5))
 
-    cfg_rim = sim_utils.DistantLightCfg(intensity=600.0, color=(1.0, 1.0, 1.0))
+    cfg_rim = sim_utils.DistantLightCfg(intensity=150.0, color=(1.0, 1.0, 1.0))  # Was 600
     cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
 
     # Build wall structure
@@ -269,21 +426,21 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
         )
         cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
 
-        # Add sky dome light
+        # Add sky dome light (REDUCED from 2000 to fix overexposure)
         cfg_dome = sim_utils.DomeLightCfg(
-            intensity=2000.0,
+            intensity=500.0,  # Was 2000
             color=(0.3, 0.6, 1.0)
         )
         cfg_dome.func("/World/skyDome", cfg_dome)
 
-        # 3-point lighting
-        cfg_key = sim_utils.DistantLightCfg(intensity=2000.0, color=(1.0, 0.95, 0.85))
+        # 3-point lighting (ALL REDUCED by 75% to fix overexposure)
+        cfg_key = sim_utils.DistantLightCfg(intensity=500.0, color=(1.0, 0.95, 0.85))  # Was 2000
         cfg_key.func("/World/lightKey", cfg_key, translation=(-3, -2, 8))
 
-        cfg_fill = sim_utils.DistantLightCfg(intensity=800.0, color=(0.9, 0.9, 1.0))
+        cfg_fill = sim_utils.DistantLightCfg(intensity=200.0, color=(0.9, 0.9, 1.0))  # Was 800
         cfg_fill.func("/World/lightFill", cfg_fill, translation=(3, -1, 5))
 
-        cfg_rim = sim_utils.DistantLightCfg(intensity=600.0, color=(1.0, 1.0, 1.0))
+        cfg_rim = sim_utils.DistantLightCfg(intensity=150.0, color=(1.0, 1.0, 1.0))  # Was 600
         cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
 
         # Build wall (only if not using base scene)
@@ -330,6 +487,10 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
         "-i", os.path.join(frames_dir, f"rgb_%0{digits}d.png"),
         "-vf", watermark_filter,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        # sRGB colorspace metadata (ensures correct color interpretation)
+        "-color_primaries", "bt709",
+        "-color_trc", "iec61966-2-1",  # sRGB transfer characteristic
+        "-colorspace", "bt709",
         "-movflags", "+faststart", out_path
     ]
     subprocess.run(cmd, check=True)
@@ -392,6 +553,10 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
             "-rc", "constqp",            # Constant QP (simpler than VBR)
             "-qp", "23",                 # Quality level
             "-pix_fmt", "yuv420p",
+            # sRGB colorspace metadata (ensures correct color interpretation)
+            "-color_primaries", "bt709",
+            "-color_trc", "iec61966-2-1",  # sRGB transfer characteristic
+            "-colorspace", "bt709",
             "-movflags", "+faststart",
             out_path
         ]
@@ -408,6 +573,10 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
             "-vf", watermark_filter,
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
+            # sRGB colorspace metadata (ensures correct color interpretation)
+            "-color_primaries", "bt709",
+            "-color_trc", "iec61966-2-1",  # sRGB transfer characteristic
+            "-colorspace", "bt709",
             "-movflags", "+faststart",
             out_path
         ]
@@ -662,6 +831,7 @@ while app_interface.is_running():
                 scaling_factor = data.get('scaling_factor', 1.0)
                 skip_first = data.get('skip_first', 10)
                 request_job_id = data.get('job_id', 'unknown')  # Get job_id from request
+                color_debug_mode = data.get('color_debug_mode', False)  # Enable color diagnostics
 
                 stage = sim_context.stage
                 camera_path = "/World/RenderCamera"
@@ -807,6 +977,10 @@ while app_interface.is_running():
                 frames_static_gpu = []  # Store GPU tensors
                 frames_follow_gpu = []  # Store GPU tensors
 
+                # Initialize debug data storage
+                pixel_stats = None  # Will store pixel statistics if debug mode enabled
+                debug_info = {}  # Will store all debug information for JSON response
+
                 steps = max(1, video_length)
                 captured = 0
                 velocity_applied = False
@@ -875,9 +1049,44 @@ while app_interface.is_running():
                         timing_camera_render_total += time.time() - t_camera_start
                         rgb_data_static = camera.data.output["rgb"]
 
+                        # Capture debug info (first frame only)
+                        if captured == 0 and color_debug_mode:
+                            # Convert to float if uint8 for mean calculation
+                            data_for_stats = rgb_data_static.float() if rgb_data_static.dtype == torch.uint8 else rgb_data_static
+                            debug_info["raw_camera_frame0"] = {
+                                "dtype": str(rgb_data_static.dtype),
+                                "device": str(rgb_data_static.device),
+                                "shape": list(rgb_data_static.shape),
+                                "min": float(rgb_data_static.min().item()),
+                                "max": float(rgb_data_static.max().item()),
+                                "mean": float(data_for_stats.mean().item())
+                            }
+
                         # Keep on GPU - just extract first batch element if needed
                         if rgb_data_static.ndim == 4:
                             rgb_data_static = rgb_data_static[0]  # Shape: (H, W, 3)
+                            if captured == 0 and color_debug_mode:
+                                debug_info["raw_camera_frame0"]["shape_after_squeeze"] = list(rgb_data_static.shape)
+
+                        # === COLOR DEBUG MODE (analyze first frame after throw) ===
+                        if color_debug_mode and captured == pause_frames:
+                            print("\n" + "="*80)
+                            print("🔬 COLOR DEBUG MODE ENABLED")
+                            print("="*80)
+
+                            # Inspect raw pixel values and capture stats
+                            pixel_stats = inspect_pixel_values(rgb_data_static, label="Raw Camera Output (Static)")
+
+                            # Save 4-way comparison
+                            debug_dir = os.path.join(out_dir, "color_debug")
+                            save_color_comparison(rgb_data_static, debug_dir, frame_idx=captured)
+
+                            print("\n💡 Visual Inspection Guide:")
+                            print("   - If A (raw) looks best: Camera outputs sRGB, remove gamma correction")
+                            print("   - If B (lin2srgb) looks best: Camera outputs linear, keep current fix")
+                            print("   - If C (srgb2lin) looks best: Camera outputs sRGB, need inverse")
+                            print("   - If D (gamma22) looks best: Use simple power curve instead")
+                            print("="*80 + "\n")
 
                         # Store GPU tensor WITHOUT watermark (add it after batch transfer on CPU)
                         frames_static_gpu.append(rgb_data_static.clone())
@@ -922,9 +1131,38 @@ while app_interface.is_running():
                 frames_static_tensor = torch.stack(frames_static_gpu)  # (N, H, W, 3)
                 frames_follow_tensor = torch.stack(frames_follow_gpu)  # (N, H, W, 3)
 
-                # Convert to uint8 on GPU
-                frames_static_uint8_gpu = (frames_static_tensor * 255).to(torch.uint8)
-                frames_follow_uint8_gpu = (frames_follow_tensor * 255).to(torch.uint8)
+                # Capture stacked tensor debug info (handle uint8 for mean)
+                if color_debug_mode:
+                    data_for_mean = frames_static_tensor.float() if frames_static_tensor.dtype == torch.uint8 else frames_static_tensor
+                    debug_info["stacked_tensor"] = {
+                        "shape": list(frames_static_tensor.shape),
+                        "dtype": str(frames_static_tensor.dtype),
+                        "min": float(frames_static_tensor.min().item()),
+                        "max": float(frames_static_tensor.max().item()),
+                        "mean": float(data_for_mean.mean().item())
+                    }
+
+                # Handle uint8 vs float32 input
+                if frames_static_tensor.dtype == torch.uint8:
+                    # Camera already outputs uint8 - use directly!
+                    print("📊 Camera outputs uint8 - using directly (no conversion needed)")
+                    frames_static_uint8_gpu = frames_static_tensor
+                    frames_follow_uint8_gpu = frames_follow_tensor
+                else:
+                    # Camera outputs float32 - convert to uint8
+                    print("📊 Camera outputs float32 - converting to uint8")
+                    frames_static_clamped = torch.clamp(frames_static_tensor, 0.0, 1.0)
+                    frames_follow_clamped = torch.clamp(frames_follow_tensor, 0.0, 1.0)
+                    frames_static_uint8_gpu = (frames_static_clamped * 255.0).round().to(torch.uint8)
+                    frames_follow_uint8_gpu = (frames_follow_clamped * 255.0).round().to(torch.uint8)
+
+                # Capture final uint8 stats
+                if color_debug_mode:
+                    debug_info["final_uint8"] = {
+                        "min": int(frames_static_uint8_gpu.min().item()),
+                        "max": int(frames_static_uint8_gpu.max().item()),
+                        "mean": float(frames_static_uint8_gpu.float().mean().item())
+                    }
 
                 # Single batched transfer to CPU
                 frames_static = frames_static_uint8_gpu.cpu().numpy()
@@ -1031,7 +1269,8 @@ while app_interface.is_running():
                 fps_achieved = captured / simulation_loop_time if simulation_loop_time > 0 else 0
                 avg_frame_time_ms = (simulation_loop_time * 1000) / captured if captured > 0 else 0
 
-                job_results[job_id] = {
+                # Build result dict
+                result = {
                     "status": "completed",
                     "frames": captured,
                     "output": out_dir,
@@ -1069,6 +1308,28 @@ while app_interface.is_running():
                         "avg_frame_time_ms": round(avg_frame_time_ms, 1)
                     }
                 }
+
+                # Add pixel statistics if debug mode was enabled
+                if pixel_stats is not None:
+                    result["pixel_statistics"] = {
+                        "min": float(pixel_stats["min"]),
+                        "max": float(pixel_stats["max"]),
+                        "mean": float(pixel_stats["mean"]),
+                        "median": float(pixel_stats["median"]),
+                        "distribution": {
+                            "low_0_to_0.3_percent": round(pixel_stats["low_pct"], 1),
+                            "mid_0.3_to_0.7_percent": round(pixel_stats["mid_pct"], 1),
+                            "high_0.7_to_1.0_percent": round(pixel_stats["high_pct"], 1)
+                        },
+                        "interpretation": "Linear RGB" if pixel_stats["low_pct"] > 60 else ("sRGB" if pixel_stats["mid_pct"] > 40 else "Ambiguous")
+                    }
+                    result["debug_images_dir"] = os.path.join(out_dir, "color_debug")
+
+                # Add debug info if debug mode was enabled
+                if debug_info:
+                    result["debug_data"] = debug_info
+
+                job_results[job_id] = result
                 print(f"✅ Simulation {job_id} done ({captured} frames, {total_time:.1f}s total)")
             except Exception as e:
                 import traceback
