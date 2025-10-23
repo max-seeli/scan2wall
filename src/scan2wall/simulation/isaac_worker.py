@@ -659,8 +659,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             force_usd_conversion=True,
             make_instanceable=False,
             mass_props=sim_utils.MassPropertiesCfg(mass=req.get('mass', 1.0)),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # ADD THIS
-            collision_props=sim_utils.CollisionPropertiesCfg(),  # ADD THIS
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            # Try to preserve materials by using simpler collision mesh
+            collision_approximation="convexHull",  # Less aggressive than convexDecomposition
         )
         
         job_queue.put(('convert', job_id, cfg))
