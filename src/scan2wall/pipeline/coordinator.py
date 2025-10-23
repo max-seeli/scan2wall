@@ -117,8 +117,9 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if USE_LLM:
         status.start("🧠 Inferring physical properties with Gemini AI...")
         print("\nInferring material properties with Gemini...")
-        props = get_object_properties(img)
-        
+        annotated_path = str(Path(glb_path).parent) + f'/{job_id}_annotated_00001_.png'
+        print(annotated_path)
+        props = get_object_properties(annotated_path)
         props_file = Path(image_path) / "properties.json"
         with open(str(props_file), 'w') as f:
             json.dump(props, f, indent=2)

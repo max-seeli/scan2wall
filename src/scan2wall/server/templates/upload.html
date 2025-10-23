@@ -80,6 +80,11 @@
       background: #f0f0f0;
       border-color: #999;
     }
+    .cta.drag-over {
+      background: #e8f4f8;
+      border-color: #667eea;
+      border-width: 3px;
+    }
     .small {
       color: #666;
       font-size: 0.9rem;
@@ -175,6 +180,67 @@
 
     #videoBox {
       grid-column: span 2;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .video-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      padding: 1rem;
+      background: #fafafa;
+      position: relative;
+    }
+
+    .video-item.ready {
+      border-color: #4caf50;
+      background: #fff;
+    }
+
+    .video-item h4 {
+      margin: 0 0 0.5rem;
+      font-size: 0.9rem;
+      color: #666;
+      text-align: center;
+    }
+
+    .video-item video {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+
+    .video-download-btn {
+      position: absolute;
+      top: 3rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .video-download-btn:hover {
+      background: #fff;
+      transform: scale(1.1);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+    }
+
+    .video-download-btn.hidden {
+      display: none;
     }
 
     .asset-box h3 {
@@ -322,12 +388,6 @@
       display: none;
     }
 
-    #videoDownloadBtn {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-    }
-
     @media (max-width: 768px) {
       #assetGrid {
         grid-template-columns: 1fr 1fr;
@@ -401,10 +461,10 @@
     <div class="upload-section">
       <div class="upload-form-container">
         <form id="form" method="post" action="/upload" enctype="multipart/form-data">
-          <input id="file" class="hidden" type="file" name="file" accept="image/*" capture="environment">
-          <label class="cta" for="file">
+          <input id="file" class="hidden" type="file" name="file" accept="image/*">
+          <label class="cta" for="file" id="uploadLabel">
             📷 <strong>Take or choose a photo</strong>
-            <span class="small">Camera opens directly • Auto-upload on selection</span>
+            <span class="small">Click to select • Drag & drop • Auto-upload on selection</span>
           </label>
         </form>
       </div>
@@ -451,17 +511,19 @@
       </div>
 
       <div id="videoBox" class="asset-box loading">
-        <h3>Simulation Video</h3>
-        <button class="download-btn hidden" id="videoDownloadBtn" title="Download Video">⬇</button>
-        <div class="asset-content">
+        <h3>Simulation Videos</h3>
+        <div id="videoStaticContainer" class="video-item">
+          <h4>Static Camera View</h4>
+          <button class="video-download-btn hidden" id="videoStaticDownloadBtn" title="Download Static Video">⬇</button>
+          <div class="loading-text">Waiting for simulation...</div>
+        </div>
+        <div id="videoFollowContainer" class="video-item">
+          <h4>Follow Camera View</h4>
+          <button class="video-download-btn hidden" id="videoFollowDownloadBtn" title="Download Follow Video">⬇</button>
           <div class="loading-text">Waiting for simulation...</div>
         </div>
       </div>
     </div>
-
-    <p class="small" style="margin-top: 1rem;">
-      Tip: Add this page to your home screen for a one-tap workflow.
-    </p>
   </div>
 
   <div class="footer">
@@ -522,7 +584,8 @@
     setupDownloadButton('downloadDecoded', (id) => `/asset/${id}/decoded?download=true`);
     setupDownloadButton('downloadGlb', (id) => `/asset/${id}/glb?download=true`);
     setupDownloadButton('downloadProperties', (id) => `/asset/${id}/properties?download=true`);
-    setupDownloadButton('videoDownloadBtn', (id) => `/video/${id}?download=true`);
+    setupDownloadButton('videoStaticDownloadBtn', (id) => `/video/${id}?view=static&download=true`);
+    setupDownloadButton('videoFollowDownloadBtn', (id) => `/video/${id}?view=follow&download=true`);
 
     // Validate file type before upload
     function isValidImageFile(file) {
@@ -766,19 +829,40 @@
       }
     }
 
-    // Show video player
+    // Show video players
     function showVideo(jobId) {
       const box = document.getElementById('videoBox');
-      const content = box.querySelector('.asset-content');
-      content.innerHTML = `
-        <video controls autoplay loop style="width: 100%; height: 100%; object-fit: contain;">
-          <source src="/video/${jobId}" type="video/mp4">
+      const staticContainer = document.getElementById('videoStaticContainer');
+      const followContainer = document.getElementById('videoFollowContainer');
+
+      // Create static video player
+      staticContainer.innerHTML = `
+        <h4>Static Camera View</h4>
+        <button class="video-download-btn" id="videoStaticDownloadBtn" title="Download Static Video">⬇</button>
+        <video controls autoplay loop style="width: 100%; height: auto; border-radius: 8px;">
+          <source src="/video/${jobId}?view=static" type="video/mp4">
           Your browser does not support the video tag.
         </video>
       `;
+      staticContainer.classList.add('ready');
+
+      // Create follow video player
+      followContainer.innerHTML = `
+        <h4>Follow Camera View</h4>
+        <button class="video-download-btn" id="videoFollowDownloadBtn" title="Download Follow Video">⬇</button>
+        <video controls autoplay loop style="width: 100%; height: auto; border-radius: 8px;">
+          <source src="/video/${jobId}?view=follow" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      `;
+      followContainer.classList.add('ready');
+
       box.classList.remove('loading');
       box.classList.add('ready');
-      document.getElementById('videoDownloadBtn').classList.remove('hidden');
+
+      // Re-setup download button handlers after creating new buttons
+      setupDownloadButton('videoStaticDownloadBtn', (id) => `/video/${id}?view=static&download=true`);
+      setupDownloadButton('videoFollowDownloadBtn', (id) => `/video/${id}?view=follow&download=true`);
     }
 
     // Poll job status and update assets progressively
@@ -853,15 +937,12 @@
       }
     }
 
-    fileInput.addEventListener('change', async () => {
-      if (!fileInput.files.length) return;
-
-      const file = fileInput.files[0];
+    // Handle file upload (used by both file input and drag-and-drop)
+    async function handleFileUpload(file) {
 
       // Validate file type
       if (!isValidImageFile(file)) {
         showStatus('❌ Invalid file type. Please upload a JPEG, PNG, WEBP, or GIF image.', 'error');
-        fileInput.value = '';
         return;
       }
 
@@ -902,10 +983,16 @@
               content.innerHTML = '<div class="loading-text">Creating textures...</div>';
             } else if (box.id === 'propertiesBox') {
               content.innerHTML = '<div class="loading-text">Processing...</div>';
-            } else if (box.id === 'videoBox') {
-              content.innerHTML = '<div class="loading-text">Waiting for simulation...</div>';
             }
           });
+
+          // Reset video containers specifically
+          const staticContainer = document.getElementById('videoStaticContainer');
+          const followContainer = document.getElementById('videoFollowContainer');
+          staticContainer.classList.remove('ready');
+          followContainer.classList.remove('ready');
+          staticContainer.innerHTML = '<h4>Static Camera View</h4><button class="video-download-btn hidden" id="videoStaticDownloadBtn" title="Download Static Video">⬇</button><div class="loading-text">Waiting for simulation...</div>';
+          followContainer.innerHTML = '<h4>Follow Camera View</h4><button class="video-download-btn hidden" id="videoFollowDownloadBtn" title="Download Follow Video">⬇</button><div class="loading-text">Waiting for simulation...</div>';
 
           // Hide all download buttons
           document.querySelectorAll('.download-btn').forEach(btn => btn.classList.add('hidden'));
@@ -921,8 +1008,39 @@
         }
       } catch (e) {
         showStatus('❌ Upload failed: ' + e.message + '. Check your connection.', 'error');
-      } finally {
-        fileInput.value = '';
+      }
+    }
+
+    // File input change handler
+    fileInput.addEventListener('change', async () => {
+      if (!fileInput.files.length) return;
+      await handleFileUpload(fileInput.files[0]);
+      fileInput.value = ''; // Reset input
+    });
+
+    // Drag and drop handlers
+    const uploadLabel = document.getElementById('uploadLabel');
+
+    uploadLabel.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadLabel.classList.add('drag-over');
+    });
+
+    uploadLabel.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadLabel.classList.remove('drag-over');
+    });
+
+    uploadLabel.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadLabel.classList.remove('drag-over');
+
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        await handleFileUpload(files[0]);
       }
     });
   </script>

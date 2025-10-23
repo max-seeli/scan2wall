@@ -55,3 +55,4 @@ miniconda.sh
 # --- Isaac Sim / Lab ---
 isaac/venv/
 isaac/IsaacLab/
+*.usd  # USD scene files (binary, auto-generated)

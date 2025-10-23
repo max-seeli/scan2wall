@@ -378,10 +378,10 @@ def create_base_scene_usd(output_path="/workspace/s2w-scripts/scenes/throw_again
     cfg_rim = sim_utils.DistantLightCfg(intensity=150.0, color=(1.0, 1.0, 1.0))  # Was 600
     cfg_rim.func("/World/lightRim", cfg_rim, translation=(0, 5, 6))
 
-    # Build wall structure
+    # Build wall structure (shifted half-brick right to prevent jamming)
     build_wall("/World/StaticObjects/Wall", width=15, height=20,
                brick_width=0.3, brick_height=0.15, brick_depth=0.15,
-               gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
+               gap=0.0, base_xy=(0.15, 10.0), z0=0.075)
 
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -415,9 +415,23 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
             root_layer.subLayerPaths.append(base_scene_path)
         print("✅ Base scene loaded")
 
+    elif use_base_scene:
+        # Auto-create base scene on first run
+        print("🏗️  Base scene not found, creating it now (one-time setup)...")
+        create_base_scene_usd(base_scene_path)
+        print(f"✅ Base scene created at {base_scene_path}")
+
+        # Now load the newly created base scene
+        print(f"📦 Loading newly created base scene...")
+        stage = sim_context.stage
+        root_layer = stage.GetRootLayer()
+        if base_scene_path not in root_layer.subLayerPaths:
+            root_layer.subLayerPaths.append(base_scene_path)
+        print("✅ Base scene loaded")
+
     else:
-        # Fallback: Build scene from scratch (old behavior)
-        print("⚠️  Base scene not found, building from scratch...")
+        # Fallback: Build scene from scratch (only if use_base_scene=False)
+        print("⚠️  Building scene from scratch (use_base_scene=False)...")
 
         # Textured ground plane (concrete/pavement look with roughness)
         cfg_ground = sim_utils.GroundPlaneCfg(
@@ -454,7 +468,7 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
         # Build wall (only if not using base scene)
         build_wall("/World/StaticObjects/Wall", width=15, height=20,
                    brick_width=0.3, brick_height=0.15, brick_depth=0.15,
-                   gap=0.0, base_xy=(0.0, 10.0), z0=0.075)
+                   gap=0.0, base_xy=(0.15, 10.0), z0=0.075)
 
     # Always load the dynamic object (this changes per simulation)
     obj_cfg = sim_utils.UsdFileCfg(
@@ -462,7 +476,10 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
         scale=(scaling_factor, scaling_factor, scaling_factor),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(),
         mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-        collision_props=sim_utils.CollisionPropertiesCfg(),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.02,    # Increased for thin objects
+            rest_offset=-0.005      # Slight bias for stability
+        ),
     )
     obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 0.5))
 

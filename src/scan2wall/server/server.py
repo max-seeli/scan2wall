@@ -99,9 +99,12 @@ async def get_job_status(job_id: str):
     glb_ready = (job_dir / f"{job_id}.glb").exists()
     properties_ready = (job_dir / "properties.json").exists()
 
-    # Check video file in job directory
-    video_path = UPLOAD_DIR / job_id / f"{job_id}_sim.mp4"
-    video_ready = video_path.exists()
+    # Check both video files in job directory
+    video_static_path = UPLOAD_DIR / job_id / f"{job_id}_static.mp4"
+    video_follow_path = UPLOAD_DIR / job_id / f"{job_id}_follow.mp4"
+    video_static_ready = video_static_path.exists()
+    video_follow_ready = video_follow_path.exists()
+    video_ready = video_static_ready and video_follow_ready
 
     return JSONResponse({
         "job_id": job["id"],
@@ -117,7 +120,9 @@ async def get_job_status(job_id: str):
             "decoded_ready": decoded_ready,
             "glb_ready": glb_ready,
             "properties_ready": properties_ready,
-            "video_ready": video_ready
+            "video_ready": video_ready,
+            "video_static_ready": video_static_ready,
+            "video_follow_ready": video_follow_ready
         }
     })
 
@@ -127,8 +132,14 @@ async def list_jobs():
     return JSONResponse({"jobs": list(JOBS.values())})
 
 @app.get("/video/{job_id}")
-async def get_video(job_id: str, download: bool = False):
-    """Serve the simulation video for a completed job."""
+async def get_video(job_id: str, view: str = "static", download: bool = False):
+    """Serve the simulation video for a completed job.
+
+    Args:
+        job_id: The job ID
+        view: Which camera view to serve ('static' or 'follow')
+        download: Whether to force download
+    """
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -138,11 +149,15 @@ async def get_video(job_id: str, download: bool = False):
     if job["status"] != "done":
         raise HTTPException(status_code=400, detail="Job not yet complete")
 
-    video_filename = f"{job_id}_sim.mp4"
+    # Validate view parameter
+    if view not in ["static", "follow"]:
+        raise HTTPException(status_code=400, detail="Invalid view parameter. Must be 'static' or 'follow'")
+
+    video_filename = f"{job_id}_{view}.mp4"
     video_path = UPLOAD_DIR / job_id / video_filename
 
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Video file not found")
+        raise HTTPException(status_code=404, detail=f"Video file not found for {view} view")
 
     headers = {}
     if download:
@@ -273,14 +288,15 @@ def _run_pipeline(job_id: str, path: str) -> None:
     try:
         out_path = process_image(job_id, path, JOBS)
         JOBS[job_id]["status"] = "done"
-        JOBS[job_id]["status_detail"] = "Complete! Simulation video generated."
+        JOBS[job_id]["status_detail"] = "Complete! Simulation videos generated."
         JOBS[job_id]["processed_path"] = out_path
 
-        # Store video path in job directory
-        video_path = UPLOAD_DIR / job_id / f"{job_id}_sim.mp4"
-        if video_path.exists():
-            JOBS[job_id]["video_path"] = str(video_path)
-            JOBS[job_id]["video_filename"] = f"{job_id}_sim.mp4"
+        # Store both video paths in job directory
+        video_static_path = UPLOAD_DIR / job_id / f"{job_id}_static.mp4"
+        video_follow_path = UPLOAD_DIR / job_id / f"{job_id}_follow.mp4"
+        if video_static_path.exists() and video_follow_path.exists():
+            JOBS[job_id]["video_static_path"] = str(video_static_path)
+            JOBS[job_id]["video_follow_path"] = str(video_follow_path)
     except Exception as e:
         JOBS[job_id]["status"] = "error"
         JOBS[job_id]["status_detail"] = f"Error: {str(e)}"
