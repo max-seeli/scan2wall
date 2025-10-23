@@ -274,15 +274,23 @@ def build_pyramid(parent: str, levels: int = 6, cube_size=0.15, gap=0.02, base_x
 
 def build_wall(parent: str, width: int = 15, height: int = 12, brick_width=0.3, brick_height=0.15, brick_depth=0.15, gap=0.01, base_xy=(0.0, 10.0), z0=0.075):
     prim_utils.create_prim(parent, "Xform")
-    
+
+    # High-friction brick material for stability
+    brick_physics_material = sim_utils.RigidBodyMaterialCfg(
+        static_friction=1.2,   # Very high friction (bricks are rough)
+        dynamic_friction=1.0,
+        restitution=0.1        # Low bounce (bricks don't bounce much)
+    )
+
     cfg_brick = sim_utils.CuboidCfg(
-        size=(brick_width * 0.97, brick_depth * 0.97, brick_height * 0.97),  # Slightly smaller for dark edge gaps
+        size=(brick_width * 0.98, brick_depth * 0.98, brick_height * 0.98),  # Less gap for more contact
         rigid_props=sim_utils.RigidBodyPropertiesCfg(),
         collision_props=sim_utils.CollisionPropertiesCfg(
-            contact_offset=0.02,
-            rest_offset=0.0
+            contact_offset=0.005,  # Reduced from 0.02 for more stable contact
+            rest_offset=-0.001     # Slight penetration for stability
         ),
-        mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+        mass_props=sim_utils.MassPropertiesCfg(mass=2.0),  # Increased from 0.5 - heavier bricks!
+        physics_material=brick_physics_material,  # Apply high-friction material
         visual_material=sim_utils.PreviewSurfaceCfg(
             diffuse_color=(0.7, 0.3, 0.2),  # Reddish-brown brick color
             roughness=0.8  # Matte finish
@@ -964,10 +972,12 @@ while app_interface.is_running():
                 dt = sim_context.get_physics_dt() if hasattr(sim_context, "get_physics_dt") else 0.01
                 sim_context.reset()  # This plays the simulation and initializes physics handles
 
-                # More warmup steps to let wall settle
-                for _ in range(20):
+                # INCREASED warmup steps to let wall settle properly (100 steps = ~1 second)
+                print("⏳ Settling wall physics (100 steps)...")
+                for _ in range(100):
                     sim_context.step()
                     app_interface.update()
+                print("✅ Wall settled")
 
                 # Update buffers to populate the data attribute
                 rigid_obj.update(dt)
@@ -1006,13 +1016,19 @@ while app_interface.is_running():
                     if not velocity_applied and captured >= pause_frames:
                         print("🎯 Applying velocity after pause...")
                         rigid_obj.update(dt)  # Update buffers first
-                        root_state = rigid_obj.data.default_root_state.clone()
+
+                        # Get CURRENT state (not default) to preserve current orientation
+                        root_state = rigid_obj.data.root_state_w.clone()
+
+                        # Set linear velocity (forward + upward trajectory)
                         root_state[:, 7:10] = torch.tensor([0.0, 13.0, 6.0], device=root_state.device)
-                        rigid_obj.write_root_pose_to_sim(root_state[:, :7])
+                        # Set angular velocity to ZERO (no spinning!)
+                        root_state[:, 10:13] = torch.tensor([0.0, 0.0, 0.0], device=root_state.device)
+
+                        # Write velocity ONLY (don't change pose/orientation)
                         rigid_obj.write_root_velocity_to_sim(root_state[:, 7:])
-                        rigid_obj.reset()
                         velocity_applied = True
-                        print("✅ Velocity applied!")
+                        print("✅ Velocity applied (keeping current orientation)!")
 
                     # Time physics step
                     t_physics_start = time.time()

@@ -181,7 +181,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     project_root = Path(__file__).resolve().parent.parent.parent.parent
     comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "input"))
     comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "output"))
-    workflow_path = project_root / "3d_gen" / "ComfyUI" / "custom_nodes" / "ComfyUI-MeshCraft" / "workflows" / "image-to-texture-mesh-api.json"
+    workflow_path = project_root / "3d_gen" / "ComfyUI" / "custom_nodes" / "ComfyUI-MeshCraft" / "workflows" / "image-to-texture-mesh-api-proper.json"
 
     # Ensure directories exist
     comfy_input_dir.mkdir(parents=True, exist_ok=True)

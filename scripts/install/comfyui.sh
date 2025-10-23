@@ -72,10 +72,10 @@ CUSTOM_NODES=(
     "https://github.com/chflame163/ComfyUI_LayerStyle"
     "https://github.com/huagetai/ComfyUI_LightGradient"
     "https://github.com/PozzettiAndrea/ComfyUI-MeshCraft"
-    "https://github.com/kijai/ComfyUI-Florence2"
+    "https://github.com/PozzettiAndrea/ComfyUI-Grounding"
     "https://github.com/neverbiasu/ComfyUI-SAM2"
     "https://github.com/rgthree/rgthree-comfy"
-    "https://github.com/kijai/ComfyUI-segment-anything-2"
+    "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
 )
 
 for repo in "${CUSTOM_NODES[@]}"; do
