@@ -1,5 +1,4 @@
 import os
-import qrcode
 import webbrowser
 from pathlib import Path
 import uvicorn
@@ -26,12 +25,7 @@ def main():
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", "49100"))
     url = f"http://{_public_ip()}:{port}/"
-    print(f"\nOpen on your phone: {url}\n")
-
-    out = Path("upload_page_qr.png")
-    img = qrcode.make(url)
-    img.save(out)
-    print(f"Saved QR code: {out.resolve()}")
+    print(f"\nUpload server running at: {url}\n")
 
     try:
         webbrowser.open(url)

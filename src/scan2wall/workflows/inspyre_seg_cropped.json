@@ -1,0 +1,178 @@
+{
+  "12": {
+    "inputs": {
+      "mask": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "InvertMask",
+    "_meta": {
+      "title": "InvertMask"
+    }
+  },
+  "21": {
+    "inputs": {
+      "x": 0,
+      "y": 0,
+      "resize_source": false,
+      "destination": [
+        "44",
+        0
+      ],
+      "source": [
+        "22",
+        0
+      ],
+      "mask": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ImageCompositeMasked",
+    "_meta": {
+      "title": "ImageCompositeMasked"
+    }
+  },
+  "22": {
+    "inputs": {
+      "width": [
+        "49",
+        0
+      ],
+      "height": [
+        "49",
+        1
+      ],
+      "start_color": "custom",
+      "end_color": "custom",
+      "gradient_distance": 1,
+      "linear_transition": 0.5,
+      "orientation": "vertical",
+      "start_color_hex": "#FFFFFF",
+      "end_color_hex": "#FFFFFF"
+    },
+    "class_type": "CR Color Gradient",
+    "_meta": {
+      "title": "🟨 CR Color Gradient"
+    }
+  },
+  "25": {
+    "inputs": {
+      "keep_top_n": 1,
+      "mask": [
+        "43",
+        1
+      ]
+    },
+    "class_type": "MaskTopNFilter",
+    "_meta": {
+      "title": "Mask Top-N Filter"
+    }
+  },
+  "39": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "43": {
+    "inputs": {
+      "torchscript_jit": "on",
+      "image": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "InspyrenetRembg",
+    "_meta": {
+      "title": "Inspyrenet Rembg"
+    }
+  },
+  "44": {
+    "inputs": {
+      "image": "PXL_20251011_211906920.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "46": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "image1": [
+        "44",
+        0
+      ],
+      "image2": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "ImageConcanate",
+    "_meta": {
+      "title": "Image Concatenate"
+    }
+  },
+  "48": {
+    "inputs": {
+      "invert_mask": false,
+      "detect": "mask_area",
+      "top_reserve": 20,
+      "bottom_reserve": 20,
+      "left_reserve": 20,
+      "right_reserve": 20,
+      "round_to_multiple": "8",
+      "image": [
+        "21",
+        0
+      ],
+      "mask": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: CropByMask V2",
+    "_meta": {
+      "title": "LayerUtility: CropByMask V2"
+    }
+  },
+  "49": {
+    "inputs": {
+      "image": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "51": {
+    "inputs": {
+      "filename_prefix": "cropped",
+      "images": [
+        "48",
+        0
+      ],
+      "mask": [
+        "48",
+        1
+      ]
+    },
+    "class_type": "SaveImageWithAlpha",
+    "_meta": {
+      "title": "Save Image With Alpha"
+    }
+  }
+}

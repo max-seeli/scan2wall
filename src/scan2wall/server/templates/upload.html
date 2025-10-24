@@ -928,6 +928,9 @@
         } else if (data.status === 'error') {
           showStatus('❌ ' + (data.status_detail || data.error || 'Unknown error'), 'error');
           return true; // done (with error)
+        } else if (data.status === 'rejected') {
+          showStatus('🚫 ' + (data.status_detail || data.error || 'Segmentation validation failed'), 'error');
+          return true; // done (rejected)
         }
 
         // Continue polling

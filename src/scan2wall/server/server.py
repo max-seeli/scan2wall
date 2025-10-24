@@ -94,7 +94,11 @@ async def get_job_status(job_id: str):
     job_dir = UPLOAD_DIR / job_id
 
     # Check availability of each asset
-    nobackground_ready = len(list(job_dir.glob(f"{job_id}_nobackground_*.png"))) > 0
+    # Check for new segmentation cropped files or old nobackground files
+    cropped_files = list(job_dir.glob(f"{job_id}_*_seg_cropped_*.png"))
+    nobackground_files = list(job_dir.glob(f"{job_id}_nobackground_*.png"))
+    nobackground_ready = len(cropped_files) > 0 or len(nobackground_files) > 0
+
     decoded_ready = len(list(job_dir.glob(f"{job_id}_decoded_*.stl"))) > 0
     glb_ready = (job_dir / f"{job_id}.glb").exists()
     properties_ready = (job_dir / "properties.json").exists()
@@ -146,7 +150,9 @@ async def get_video(job_id: str, view: str = "static", download: bool = False):
     job = JOBS[job_id]
 
     # Check if job is complete and has a video
-    if job["status"] != "done":
+    if job["status"] == "rejected":
+        raise HTTPException(status_code=400, detail="Segmentation validation failed - no video available")
+    elif job["status"] != "done":
         raise HTTPException(status_code=400, detail="Job not yet complete")
 
     # Validate view parameter
@@ -190,25 +196,31 @@ async def get_original_image(job_id: str):
 
 @app.get("/asset/{job_id}/nobackground")
 async def get_nobackground_image(job_id: str, download: bool = False):
-    """Serve the image with background removed."""
+    """Serve the image with background removed (segmentation cropped image)."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
 
     job_dir = UPLOAD_DIR / job_id
-    # Find the nobackground PNG file
-    nobackground_files = list(job_dir.glob(f"{job_id}_nobackground_*.png"))
 
-    if not nobackground_files:
-        raise HTTPException(status_code=404, detail="No-background image not yet available")
+    # Look for cropped segmentation files (SAM or Inspyre)
+    # Pattern: {job_id}_sam_seg_cropped_*.png or {job_id}_inspyre_seg_cropped_*.png
+    cropped_files = list(job_dir.glob(f"{job_id}_*_seg_cropped_*.png"))
+
+    # Fallback to old nobackground pattern for backwards compatibility
+    if not cropped_files:
+        cropped_files = list(job_dir.glob(f"{job_id}_nobackground_*.png"))
+
+    if not cropped_files:
+        raise HTTPException(status_code=404, detail="Segmented image not yet available")
 
     headers = {}
     if download:
-        headers["Content-Disposition"] = f"attachment; filename={job_id}_nobackground.png"
+        headers["Content-Disposition"] = f"attachment; filename={job_id}_segmented.png"
 
     return FileResponse(
-        path=str(nobackground_files[0]),
+        path=str(cropped_files[0]),
         media_type="image/png",
-        filename=f"{job_id}_nobackground.png",
+        filename=f"{job_id}_segmented.png",
         headers=headers
     )
 
@@ -298,7 +310,13 @@ def _run_pipeline(job_id: str, path: str) -> None:
             JOBS[job_id]["video_static_path"] = str(video_static_path)
             JOBS[job_id]["video_follow_path"] = str(video_follow_path)
     except Exception as e:
-        JOBS[job_id]["status"] = "error"
-        JOBS[job_id]["status_detail"] = f"Error: {str(e)}"
-        JOBS[job_id]["error"] = repr(e)
+        # Check if status was already set to "rejected" by the pipeline
+        if JOBS[job_id]["status"] != "rejected":
+            JOBS[job_id]["status"] = "error"
+            JOBS[job_id]["status_detail"] = f"Error: {str(e)}"
+            JOBS[job_id]["error"] = repr(e)
+        else:
+            # Keep rejected status and update detail message
+            JOBS[job_id]["status_detail"] = str(e)
+            JOBS[job_id]["error"] = str(e)
         print(f"[ERROR] Job {job_id} failed: {e}")

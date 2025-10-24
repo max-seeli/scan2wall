@@ -76,7 +76,7 @@ CUSTOM_NODES=(
     "https://github.com/kijai/ComfyUI-segment-anything-2"
     "https://github.com/rgthree/rgthree-comfy"
     "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
-    "https://github.com/ZHO-ZHO-ZHO/ComfyUI-Gemini"
+    "https://github.com/yichengup/ComfyUI-YCNodes"
 )
 
 for repo in "${CUSTOM_NODES[@]}"; do

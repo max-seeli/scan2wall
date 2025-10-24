@@ -1,7 +1,7 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from scan2wall.inference.get_object_properties import get_object_properties
+from scan2wall.inference.get_object_properties import get_object_properties, validate_segmentation
 import requests
 import re
 import subprocess
@@ -92,13 +92,87 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if img is None:
         raise FileNotFoundError(f"No image found in {image_path}")
 
-    # Generate 3D mesh via ComfyUI API
+    # Stage 1: Run SAM segmentation
+    status.start("🔍 Running SAM segmentation...")
+    print("=" * 60)
+    print("Starting segmentation pipeline...")
+    print("=" * 60)
+
+    sam_result = run_segmentation_workflow("SAM_seg_cropped.json", str(img), job_id)
+    print(f"✓ SAM segmentation complete")
+    print(f"  Concatenated: {sam_result['concatenated']}")
+    print(f"  Cropped: {sam_result['cropped']}")
+    status.stop("✓ SAM segmentation complete")
+
+    # Stage 2: Validate segmentation with Gemini (use concatenated image)
+    status.start("🤖 Validating segmentation with Gemini AI...")
+    print("Validating segmentation quality...")
+    validation_result = validate_segmentation(sam_result['concatenated'])
+    print(f"Validation result: {validation_result['decision']}")
+    print(f"Description: {validation_result['description']}")
+
+    accepted_cropped_image = None
+
+    if validation_result['decision'] == "ACCEPT":
+        print("✓ SAM segmentation ACCEPTED")
+        status.stop("✓ Segmentation validated successfully")
+        accepted_cropped_image = sam_result['cropped']  # Use cropped for mesh gen
+    else:
+        # SAM rejected, try Inspyre segmentation
+        print("=" * 60)
+        print("DEBUG: Entering else block - SAM was rejected")
+        print(f"DEBUG: Validation decision was: {validation_result['decision']}")
+        print("=" * 60)
+        print("⚠ SAM segmentation REJECTED, trying Inspyre...")
+        status.stop()
+
+        # Stage 3: Run Inspyre segmentation
+        print("DEBUG: About to start Inspyre segmentation...")
+        status.start("🔄 Running Inspyre segmentation (alternative method)...")
+        print("Running alternative segmentation (Inspyre)...")
+        inspyre_result = run_segmentation_workflow("inspyre_seg_cropped.json", str(img), job_id)
+        print(f"DEBUG: Inspyre workflow returned: {inspyre_result}")
+        print(f"✓ Inspyre segmentation complete")
+        print(f"  Concatenated: {inspyre_result['concatenated']}")
+        print(f"  Cropped: {inspyre_result['cropped']}")
+        status.stop("✓ Inspyre segmentation complete")
+
+        # Stage 4: Validate again with Gemini (use concatenated image)
+        status.start("🤖 Validating alternative segmentation...")
+        print("Validating alternative segmentation...")
+        validation_result = validate_segmentation(inspyre_result['concatenated'])
+        print(f"Validation result: {validation_result['decision']}")
+        print(f"Description: {validation_result['description']}")
+
+        if validation_result['decision'] == "ACCEPT":
+            print("✓ Inspyre segmentation ACCEPTED")
+            status.stop("✓ Alternative segmentation validated successfully")
+            accepted_cropped_image = inspyre_result['cropped']  # Use cropped for mesh gen
+        else:
+            # Both segmentations failed
+            print("=" * 60)
+            print("DEBUG: Entering nested else - Inspyre was ALSO rejected")
+            print("=" * 60)
+            print("❌ Both segmentations REJECTED")
+            status.stop("❌ Segmentation validation failed")
+            if jobs_dict and job_id in jobs_dict:
+                jobs_dict[job_id]["status"] = "rejected"
+            error_msg = (
+                "Unfortunately, a clear mask could not be extracted from your picture! "
+                "Please go ahead and take another photo. Tips: make sure that the object is "
+                "FULLY visible, in focus, on a clear surface and that you are not holding it "
+                "with your finger occluding hands"
+            )
+            raise ValueError(error_msg)
+
+    # Generate 3D mesh via ComfyUI API using the accepted CROPPED image
     status.start("🎨 Creating 3D mesh with ComfyUI (Hunyuan 3D)...")
     print("=" * 60)
     print("Starting 3D mesh generation via ComfyUI...")
+    print(f"Using cropped image: {accepted_cropped_image}")
     print("=" * 60)
 
-    glb_path = generate_mesh_via_comfyui(img, job_id)
+    glb_path = generate_mesh_via_comfyui(accepted_cropped_image, job_id)
 
     print(f"✓ 3D mesh generated: {glb_path}")
     status.stop("✓ 3D mesh created successfully (all assets ready)")
@@ -117,9 +191,10 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if USE_LLM:
         status.start("🧠 Inferring physical properties with Gemini AI...")
         print("\nInferring material properties with Gemini...")
-        annotated_path = str(Path(glb_path).parent) + f'/{job_id}_annotated_00001_.png'
-        print(annotated_path)
-        props = get_object_properties(annotated_path)
+        # Use the cropped segmentation image (clean object on white background)
+        inference_image = accepted_cropped_image
+        print(f"Using image for inference: {inference_image}")
+        props = get_object_properties(inference_image)
         props_file = Path(image_path) / "properties.json"
         with open(str(props_file), 'w') as f:
             json.dump(props, f, indent=2)
@@ -165,6 +240,135 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     return str(glb_path)
 
 
+def run_segmentation_workflow(workflow_name: str, image_path: str, job_id: str) -> str:
+    """
+    Run a segmentation workflow (SAM_seg or inspyre_seg) via ComfyUI API.
+
+    Args:
+        workflow_name: Name of workflow JSON file (e.g., "SAM_seg.json")
+        image_path: Path to input image
+        job_id: Unique job identifier
+
+    Returns:
+        Path to concatenated output image (original LEFT, masked RIGHT)
+    """
+    # Configuration
+    comfy_url = os.getenv("COMFY_URL", "http://127.0.0.1:8188")
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "input"))
+    comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "output"))
+    workflow_path = project_root / "src" / "scan2wall" / "workflows" / workflow_name
+
+    # Ensure directories exist
+    comfy_input_dir.mkdir(parents=True, exist_ok=True)
+    comfy_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy image to ComfyUI input directory with unique name
+    image_filename = f"{job_id}_seg_{Path(image_path).name}"
+    dest_image_path = comfy_input_dir / image_filename
+    shutil.copy2(image_path, dest_image_path)
+    print(f"✓ Image copied to ComfyUI input: {dest_image_path}")
+
+    # Load workflow template
+    with open(workflow_path, "r") as f:
+        workflow = json.load(f)
+
+    # Update workflow with image filename (node 44 is LoadImage for segmentation workflows)
+    workflow["44"]["inputs"]["image"] = image_filename
+
+    # Update filename prefixes for BOTH outputs
+    # SAM workflow: node 43 (concatenated), node 50 (cropped)
+    # Inspyre workflow: node 39 (concatenated), node 40 (cropped) - adjust as needed
+    workflow_type = "sam" if "SAM_seg" in workflow_name else "inspyre"
+
+    if "SAM_seg" in workflow_name:
+        # SAM workflow: node 43 (concatenated), node 50 (cropped)
+        workflow["43"]["inputs"]["filename_prefix"] = f"{job_id}_{workflow_type}_seg"
+        workflow["50"]["inputs"]["filename_prefix"] = f"{job_id}_{workflow_type}_seg_cropped"
+    else:
+        # Inspyre workflow: node 39 (concatenated), node 51 (cropped)
+        workflow["39"]["inputs"]["filename_prefix"] = f"{job_id}_{workflow_type}_seg"
+        workflow["51"]["inputs"]["filename_prefix"] = f"{job_id}_{workflow_type}_seg_cropped"
+
+    print(f"✓ Segmentation workflow configured: {workflow_name}")
+
+    # Queue the prompt to ComfyUI
+    print("Queueing segmentation workflow to ComfyUI...")
+    prompt_data = {
+        "prompt": workflow,
+        "client_id": job_id
+    }
+
+    response = requests.post(f"{comfy_url}/prompt", json=prompt_data)
+    if response.status_code != 200:
+        print(f"[ERROR] Status: {response.status_code}")
+        print(f"[ERROR] Response: {response.text}")
+    response.raise_for_status()
+
+    result = response.json()
+    prompt_id = result["prompt_id"]
+    print(f"✓ Segmentation workflow queued with prompt_id: {prompt_id}")
+
+    # Poll for completion
+    print("Waiting for segmentation to complete...")
+    max_wait = 300  # 5 minutes max for segmentation
+    start_time = time.time()
+    processed_dir = Path(image_path).parent
+
+    while time.time() - start_time < max_wait:
+        # Check if workflow is complete
+        history_response = requests.get(f"{comfy_url}/history/{prompt_id}")
+
+        if history_response.status_code == 200:
+            history = history_response.json()
+
+            if prompt_id in history:
+                prompt_history = history[prompt_id]
+
+                # Check if completed
+                if "outputs" in prompt_history:
+                    print("\n✓ Segmentation complete!")
+
+                    # Find and copy BOTH output images (concatenated + cropped)
+                    # Use workflow-specific pattern to avoid conflicts
+                    workflow_type = "sam" if "SAM_seg" in workflow_name else "inspyre"
+
+                    # Find concatenated (without _cropped) and cropped (with _cropped)
+                    all_files = list(comfy_output_dir.glob(f"{job_id}_{workflow_type}_seg*"))
+                    concatenated_files = [f for f in all_files if "_cropped" not in f.name]
+                    cropped_files = [f for f in all_files if "_cropped" in f.name]
+
+                    if not concatenated_files or not cropped_files:
+                        raise FileNotFoundError(
+                            f"Expected concatenated and cropped outputs for job {job_id}. "
+                            f"Found {len(concatenated_files)} concatenated, {len(cropped_files)} cropped"
+                        )
+
+                    concatenated_file = concatenated_files[0]
+                    cropped_file = cropped_files[0]
+
+                    # Copy both to job directory
+                    concatenated_path = processed_dir / concatenated_file.name
+                    cropped_path = processed_dir / cropped_file.name
+                    shutil.copy2(concatenated_file, concatenated_path)
+                    shutil.copy2(cropped_file, cropped_path)
+
+                    print(f"✓ Concatenated output: {concatenated_path}")
+                    print(f"✓ Cropped output: {cropped_path}")
+
+                    # Return both paths as a dict
+                    return {
+                        "concatenated": str(concatenated_path),
+                        "cropped": str(cropped_path)
+                    }
+
+        # Wait before polling again
+        time.sleep(2)
+        print(".", end="", flush=True)
+
+    raise TimeoutError(f"Segmentation workflow timed out after {max_wait}s")
+
+
 def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     """
     Generate 3D mesh using ComfyUI's API directly.
@@ -182,7 +386,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     project_root = Path(__file__).resolve().parent.parent.parent.parent
     comfy_input_dir = Path(os.getenv("COMFY_INPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "input"))
     comfy_output_dir = Path(os.getenv("COMFY_OUTPUT_DIR", project_root / "3d_gen" / "ComfyUI" / "output"))
-    workflow_path = project_root / "3d_gen" / "ComfyUI" / "custom_nodes" / "ComfyUI-MeshCraft" / "workflows" / "image-to-texture-mesh-api-proper.json"
+    workflow_path = project_root / "src" / "scan2wall" / "workflows" / "image2mesh-api.json"
 
     # Ensure directories exist
     comfy_input_dir.mkdir(parents=True, exist_ok=True)
@@ -198,8 +402,8 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     with open(workflow_path, "r") as f:
         workflow = json.load(f)
 
-    # Update workflow with image filename (node 112 is LoadImage)
-    workflow["112"]["inputs"]["image"] = image_filename
+    # Update workflow with image filename (node 240 is LoadImage)
+    workflow["240"]["inputs"]["image"] = image_filename
 
     # Update filename prefix for output (node 89 is the output filename)
     workflow["89"]["inputs"]["string"] = job_id

@@ -1,0 +1,245 @@
+{
+  "2": {
+    "inputs": {
+      "prompt": "main object in center, main object in foreground",
+      "confidence_threshold": 0.35,
+      "text_threshold": 0.01,
+      "single_box_mode": true,
+      "bbox_output_format": "list_only",
+      "output_masks": false,
+      "model": [
+        "7",
+        0
+      ],
+      "image": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "GroundingDetector",
+    "_meta": {
+      "title": "Grounding Detector"
+    }
+  },
+  "3": {
+    "inputs": {
+      "keep_model_loaded": true,
+      "individual_objects": false,
+      "sam2_model": [
+        "4",
+        0
+      ],
+      "image": [
+        "44",
+        0
+      ],
+      "bboxes": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "Sam2Segmentation",
+    "_meta": {
+      "title": "Sam2Segmentation"
+    }
+  },
+  "4": {
+    "inputs": {
+      "model": "sam2_hiera_base_plus.safetensors",
+      "segmentor": "single_image",
+      "device": "cuda",
+      "precision": "fp16"
+    },
+    "class_type": "DownloadAndLoadSAM2Model",
+    "_meta": {
+      "title": "(Down)Load SAM2Model"
+    }
+  },
+  "7": {
+    "inputs": {
+      "model": "Florence-2: Large (0.77B params)",
+      "keep_in_memory": true,
+      "florence2_attn": "eager"
+    },
+    "class_type": "GroundingModelLoader",
+    "_meta": {
+      "title": "Grounding Model Loader"
+    }
+  },
+  "10": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "image1": [
+        "44",
+        0
+      ],
+      "image2": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "ImageConcanate",
+    "_meta": {
+      "title": "Image Concatenate"
+    }
+  },
+  "12": {
+    "inputs": {
+      "mask": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "InvertMask",
+    "_meta": {
+      "title": "InvertMask"
+    }
+  },
+  "13": {
+    "inputs": {
+      "value": 0.9,
+      "mask": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "ThresholdMask",
+    "_meta": {
+      "title": "ThresholdMask"
+    }
+  },
+  "21": {
+    "inputs": {
+      "x": 0,
+      "y": 0,
+      "resize_source": false,
+      "destination": [
+        "44",
+        0
+      ],
+      "source": [
+        "22",
+        0
+      ],
+      "mask": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ImageCompositeMasked",
+    "_meta": {
+      "title": "ImageCompositeMasked"
+    }
+  },
+  "22": {
+    "inputs": {
+      "width": [
+        "49",
+        0
+      ],
+      "height": [
+        "49",
+        1
+      ],
+      "start_color": "custom",
+      "end_color": "custom",
+      "gradient_distance": 1,
+      "linear_transition": 0.5,
+      "orientation": "vertical",
+      "start_color_hex": "#FFFFFF",
+      "end_color_hex": "#FFFFFF"
+    },
+    "class_type": "CR Color Gradient",
+    "_meta": {
+      "title": "🟨 CR Color Gradient"
+    }
+  },
+  "25": {
+    "inputs": {
+      "keep_top_n": 1,
+      "mask": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "MaskTopNFilter",
+    "_meta": {
+      "title": "Mask Top-N Filter"
+    }
+  },
+  "43": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "44": {
+    "inputs": {
+      "image": "PXL_20251012_073731947.webp"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "47": {
+    "inputs": {
+      "invert_mask": false,
+      "detect": "mask_area",
+      "top_reserve": 20,
+      "bottom_reserve": 20,
+      "left_reserve": 20,
+      "right_reserve": 20,
+      "round_to_multiple": "8",
+      "image": [
+        "21",
+        0
+      ],
+      "mask": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: CropByMask V2",
+    "_meta": {
+      "title": "LayerUtility: CropByMask V2"
+    }
+  },
+  "49": {
+    "inputs": {
+      "image": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "50": {
+    "inputs": {
+      "filename_prefix": "cropped",
+      "images": [
+        "47",
+        0
+      ],
+      "mask": [
+        "47",
+        1
+      ]
+    },
+    "class_type": "SaveImageWithAlpha",
+    "_meta": {
+      "title": "Save Image With Alpha"
+    }
+  }
+}
