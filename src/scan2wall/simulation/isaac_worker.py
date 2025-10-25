@@ -629,6 +629,16 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
 
         if process.returncode == 0:
             print(f"[INFO] MP4 with watermark saved → {out_path}")
+            # Fix video file permissions and ownership for host access
+            import stat
+            try:
+                os.chmod(out_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)  # 666
+
+                # Change ownership to host user (get UID/GID from parent directory)
+                parent_stat = os.stat(os.path.dirname(out_path))
+                os.chown(out_path, parent_stat.st_uid, parent_stat.st_gid)
+            except Exception as perm_err:
+                print(f"[WARN] Could not fix video permissions/ownership: {perm_err}")
         else:
             stderr_output = process.stderr.read().decode()
             print(f"[ERROR] ffmpeg encoding failed: {stderr_output}")
@@ -675,56 +685,70 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def _handle_convert(self):
-        content_length = int(self.headers['Content-Length'])
-        body = self.rfile.read(content_length)
-        req = json.loads(body)
-        
-        job_id = str(uuid.uuid4())
-        print(f"🔄 Queuing conversion: {req['asset_path']} (job: {job_id})")
-        
-        # Extract physics properties from request
-        mass = req.get('mass', 1.0)
-        static_friction = req.get('static_friction', 0.5)
-        dynamic_friction = req.get('dynamic_friction', 0.4)
-        restitution = req.get('restitution', 0.5)
+        try:
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            req = json.loads(body)
 
-        cfg = MeshConverterCfg(
-            asset_path=req['asset_path'],
-            usd_dir=req['usd_dir'],
-            force_usd_conversion=True,
-            make_instanceable=False,
-            mass_props=sim_utils.MassPropertiesCfg(mass=mass),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            # Apply physics material with friction and restitution
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=static_friction,
-                dynamic_friction=dynamic_friction,
-                restitution=restitution,
-            ),
-            # Try to preserve materials by using simpler collision mesh
-            collision_approximation="convexHull",  # Less aggressive than convexDecomposition
-        )
-        
-        job_queue.put(('convert', job_id, cfg))
-        result = self._wait_for_result(job_id)
-        
-        if result["status"] == "completed":
-            print(f"✅ Conversion complete (job: {job_id})")
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "completed",
-                "usd_dir": req['usd_dir'],
-                "job_id": job_id
-            }).encode())
-        else:
-            print(f"❌ Failed (job: {job_id})")
+            job_id = str(uuid.uuid4())
+            print(f"🔄 Queuing conversion: {req['asset_path']} (job: {job_id})")
+
+            # Extract physics properties from request
+            mass = req.get('mass', 1.0)
+            static_friction = req.get('static_friction', 0.5)
+            dynamic_friction = req.get('dynamic_friction', 0.4)
+            restitution = req.get('restitution', 0.5)
+            scaling = req.get('scaling', None)  # Real-world size in meters (max dimension)
+
+            cfg = MeshConverterCfg(
+                asset_path=req['asset_path'],
+                usd_dir=req['usd_dir'],
+                force_usd_conversion=True,
+                make_instanceable=False,
+                mass_props=sim_utils.MassPropertiesCfg(mass=mass),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+                collision_props=sim_utils.CollisionPropertiesCfg(),
+                # Apply friction and restitution via collision approximation
+                collision_approximation="convexHull",  # Less aggressive than convexDecomposition
+            )
+
+            # Pass all data including physics properties and scaling
+            convert_data = {
+                'cfg': cfg,
+                'static_friction': static_friction,
+                'dynamic_friction': dynamic_friction,
+                'restitution': restitution,
+                'asset_path': req['asset_path'],
+                'usd_dir': req['usd_dir'],
+                'scaling': scaling  # Real-world size to scale to
+            }
+            job_queue.put(('convert', job_id, convert_data))
+            result = self._wait_for_result(job_id)
+
+            if result["status"] == "completed":
+                print(f"✅ Conversion complete (job: {job_id})")
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "status": "completed",
+                    "usd_dir": req['usd_dir'],
+                    "job_id": job_id
+                }).encode())
+            else:
+                print(f"❌ Failed (job: {job_id})")
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"❌ HTTP handler error: {e}")
             self.send_response(500)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
+            self.wfile.write(json.dumps({"status": "error", "error": str(e)}).encode())
     
     def _handle_simulation(self):
         content_length = int(self.headers['Content-Length'])
@@ -830,7 +854,94 @@ while app_interface.is_running():
         if job_type == 'convert':
             print(f"⚙️  Processing conversion {job_id}...")
             try:
-                MeshConverter(data)
+                # Run mesh conversion
+                MeshConverter(data['cfg'])
+
+                # Apply physics material and scaling to the converted USD
+                import os.path
+                usd_file = os.path.join(data['usd_dir'], os.path.basename(data['asset_path']).replace('.glb', '.usd'))
+                print(f"📝 Post-processing USD: {usd_file}")
+
+                from pxr import Usd, UsdPhysics, UsdShade, UsdGeom, Gf
+                stage = Usd.Stage.Open(usd_file)
+
+                # Normalize and scale mesh if scaling is provided
+                if data.get('scaling'):
+                    print(f"📏 Normalizing and scaling mesh to {data['scaling']:.3f}m...")
+
+                    # Calculate current bounding box
+                    bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default'])
+                    root_prim = stage.GetDefaultPrim()
+                    bbox = bbox_cache.ComputeWorldBound(root_prim)
+                    bbox_range = bbox.ComputeAlignedBox()
+                    current_size = bbox_range.GetSize()
+                    current_max = max(current_size[0], current_size[1], current_size[2])
+
+                    print(f"  Current size: {current_size[0]:.3f} x {current_size[1]:.3f} x {current_size[2]:.3f}")
+                    print(f"  Max dimension: {current_max:.3f}")
+
+                    # Calculate scale factor to normalize to 1.0, then scale to target size
+                    # This maintains aspect ratio (isomorphic scaling)
+                    scale_factor = data['scaling'] / current_max if current_max > 0 else 1.0
+
+                    print(f"  Scale factor: {scale_factor:.3f}")
+                    print(f"  Final size: ~{data['scaling']:.3f}m (max dimension)")
+
+                    # Apply scale to root prim
+                    xform_api = UsdGeom.Xformable(root_prim)
+                    xform_api.ClearXformOpOrder()  # Clear existing transforms
+                    scale_op = xform_api.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)  # Use double precision
+                    scale_op.Set(Gf.Vec3d(scale_factor, scale_factor, scale_factor))
+
+                    print(f"✓ Mesh scaled to real-world size")
+
+                # Find the root prim
+                for prim in stage.Traverse():
+                    if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                        # Get or create physics material
+                        material_path = "/World/PhysicsMaterial"
+                        if not stage.GetPrimAtPath(material_path):
+                            material = UsdShade.Material.Define(stage, material_path)
+                            physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+                            physics_material.CreateStaticFrictionAttr(data['static_friction'])
+                            physics_material.CreateDynamicFrictionAttr(data['dynamic_friction'])
+                            physics_material.CreateRestitutionAttr(data['restitution'])
+
+                        # Bind material to prim
+                        UsdShade.MaterialBindingAPI(prim).Bind(UsdShade.Material(stage.GetPrimAtPath(material_path)))
+                        print(f"✓ Applied physics material (static={data['static_friction']}, dynamic={data['dynamic_friction']}, restitution={data['restitution']})")
+                        break
+
+                stage.Save()
+
+                # Fix file permissions and ownership for host access (Docker creates files as root)
+                import stat
+                import subprocess
+                try:
+                    # Make USD file readable/writable by all users and change ownership
+                    os.chmod(usd_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)  # 666
+
+                    # Change ownership to host user (get UID/GID from parent directory)
+                    # The data directory is mounted from host, so it has the correct ownership
+                    parent_stat = os.stat(os.path.dirname(data['usd_dir']))
+                    os.chown(usd_file, parent_stat.st_uid, parent_stat.st_gid)
+                    print(f"✓ Fixed USD file permissions and ownership")
+
+                    # Fix texture permissions if textures directory exists
+                    textures_dir = os.path.join(data['usd_dir'], 'textures')
+                    if os.path.exists(textures_dir):
+                        # Fix directory ownership
+                        os.chown(textures_dir, parent_stat.st_uid, parent_stat.st_gid)
+
+                        for texture_file in os.listdir(textures_dir):
+                            texture_path = os.path.join(textures_dir, texture_file)
+                            if os.path.isfile(texture_path):
+                                os.chmod(texture_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)  # 666
+                                os.chown(texture_path, parent_stat.st_uid, parent_stat.st_gid)
+                        print(f"✓ Fixed texture permissions and ownership ({len(os.listdir(textures_dir))} files)")
+                except Exception as perm_err:
+                    print(f"⚠ Warning: Could not fix permissions/ownership: {perm_err}")
+
                 job_results[job_id] = {"status": "completed"}
                 print(f"✅ Conversion {job_id} done")
             except Exception as e:

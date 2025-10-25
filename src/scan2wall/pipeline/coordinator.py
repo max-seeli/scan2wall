@@ -486,9 +486,19 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
-def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None) -> str:
+def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None, scaling=None) -> str:
     """
     Convert GLB mesh to USD format via the persistent Isaac worker API.
+
+    Args:
+        out_file: Path to GLB file
+        fname: Filename
+        mass: Mass in kg
+        df: Dynamic friction
+        ds: Static friction
+        restitution: Restitution coefficient
+        scaling: Real-world size in meters (max dimension). If provided, mesh will be normalized
+                 to 1x1x1 box then scaled to this size.
     """
     fname_new = fname.replace(".glb", ".usd")
     print(f"Converting {fname} → {fname_new} via Isaac worker...")
@@ -514,6 +524,7 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restit
         "static_friction": ds,
         "dynamic_friction": df,
         "restitution": restitution,
+        "scaling": scaling,  # Real-world size in meters
     }
 
     # Send the conversion request to the persistent worker

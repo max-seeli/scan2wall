@@ -650,9 +650,7 @@ def run_usd_conversion_stage(glb_files: List[Path]):
             props_source = None
 
             # Priority 1: Look for properties.json in texturedmeshes directory
-            props_file = glb_path.with_suffix('').with_suffix('_properties.json')
-            if not props_file.exists():
-                props_file = glb_path.parent / f"{glb_path.stem}_properties.json"
+            props_file = glb_path.parent / f"{glb_path.stem}_properties.json"
 
             if props_file.exists():
                 try:
@@ -663,8 +661,11 @@ def run_usd_conversion_stage(glb_files: List[Path]):
                     pass
 
             # Priority 2: Look in segmented directory
+            # GLB files are named like: test_object_sam_seg.glb or test_object_inspyre_seg.glb
+            # Properties files are named like: test_object_sam_seg_properties.json
             if not props:
                 seg_props_file = TEST_SEGMENTED_DIR / f"{glb_path.stem}_properties.json"
+
                 if seg_props_file.exists():
                     try:
                         with open(seg_props_file, 'r') as f:
@@ -674,8 +675,10 @@ def run_usd_conversion_stage(glb_files: List[Path]):
                         pass
 
             # Priority 3: Fresh inference from segmented image
+            # Segmented images have same stem as GLB: test_object_sam_seg.png
             if not props:
-                seg_image = TEST_SEGMENTED_DIR / glb_path.with_suffix('.png').name
+                seg_image = TEST_SEGMENTED_DIR / f"{glb_path.stem}.png"
+
                 if seg_image.exists():
                     try:
                         props = get_object_properties(str(seg_image))
@@ -695,6 +698,16 @@ def run_usd_conversion_stage(glb_files: List[Path]):
                 props_source = "defaults"
                 click.echo(f"     Using {props_source} (no properties found)")
 
+            # Get real-world scaling from dimensions
+            scaling = max(
+                props.get("dimensions_m", {}).get("length", {}).get("value", 1.0),
+                props.get("dimensions_m", {}).get("width", {}).get("value", 1.0),
+                props.get("dimensions_m", {}).get("height", {}).get("value", 1.0),
+            ) if props and "error" not in props else None
+
+            if scaling:
+                click.echo(f"     Real-world size: {scaling:.3f}m (max dimension)")
+
             # Convert to USD
             click.echo("  🔄 Converting to USD...")
             conv_start = time.time()
@@ -703,7 +716,7 @@ def run_usd_conversion_stage(glb_files: List[Path]):
             temp_glb = TEST_USD_DIR / glb_path.name
             shutil.copy2(glb_path, temp_glb)
 
-            usd_path = convert_mesh(temp_glb, glb_path.name, mass=mass, df=df, ds=ds, restitution=restitution)
+            usd_path = convert_mesh(temp_glb, glb_path.name, mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling)
             conv_time = time.time() - conv_start
 
             elapsed = time.time() - start_time
@@ -757,7 +770,8 @@ def run_simulation_stage(usd_files: List[Path]):
         start_time = time.time()
 
         try:
-            # Run simulation
+            # USD file is already scaled to correct size during conversion
+            # No need to apply scaling here
             click.echo("  🎮 Running physics simulation...")
             sim_start = time.time()
 
@@ -766,17 +780,17 @@ def run_simulation_stage(usd_files: List[Path]):
             sim_time = time.time() - sim_start
             elapsed = time.time() - start_time
 
-            # Check for video files
-            video_static = TEST_USD_DIR.parent / "recordings" / f"{job_id}_static.mp4"
-            video_follow = TEST_USD_DIR.parent / "recordings" / f"{job_id}_follow.mp4"
+            # Videos are created in the USD directory
+            video_static = TEST_USD_DIR / f"{job_id}_static.mp4"
+            video_follow = TEST_USD_DIR / f"{job_id}_follow.mp4"
 
-            # Copy videos to test directory
+            # Move videos to test videos directory
             if video_static.exists():
                 dest = TEST_VIDEOS_DIR / video_static.name
-                shutil.copy2(video_static, dest)
+                shutil.move(str(video_static), str(dest))
             if video_follow.exists():
                 dest = TEST_VIDEOS_DIR / video_follow.name
-                shutil.copy2(video_follow, dest)
+                shutil.move(str(video_follow), str(dest))
 
             click.echo(f"  ✅ Simulation complete ({elapsed:.1f}s)")
             click.echo(f"     Simulation time: {sim_time:.1f}s")

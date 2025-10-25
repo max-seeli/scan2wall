@@ -34,6 +34,10 @@ def info():
 from scan2wall.cli.test import test
 main.add_command(test)
 
+# Import utility commands
+from scan2wall.cli.check_size import check_size
+main.add_command(check_size, name='check-size')
+
 
 # Default behavior: show info if no command given
 @main.result_callback()
