@@ -50,7 +50,7 @@ def get_object_properties(image_path):
         [prompt, img],
         generation_config={
             "temperature": 0.2,
-            "max_output_tokens": 512,
+            "max_output_tokens": 2048,
             "response_mime_type": "application/json",
         },
     )
