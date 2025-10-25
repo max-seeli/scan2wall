@@ -75,7 +75,7 @@ CUSTOM_NODES=(
     "https://github.com/PozzettiAndrea/ComfyUI-Grounding"
     "https://github.com/kijai/ComfyUI-segment-anything-2"
     "https://github.com/rgthree/rgthree-comfy"
-    "https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg"
+    "https://github.com/PozzettiAndrea/ComfyUI-Inspyrenet-Rembg-withcaching"
     "https://github.com/yichengup/ComfyUI-YCNodes"
 )
 

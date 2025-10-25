@@ -209,12 +209,13 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
         mass = props["weight_kg"]["value"]
         df = props["friction_coefficients"]["dynamic"]
         ds = props["friction_coefficients"]["static"]
+        restitution = props.get("restitution", {}).get("value", 0.5)  # Default to 0.5 if missing
         scaling = max(
             props["dimensions_m"]["length"]["value"],
             props["dimensions_m"]["width"]["value"],
             props["dimensions_m"]["height"]["value"],
         )
-        status.stop(f"✓ Physical properties inferred (mass: {mass}kg)")
+        status.stop(f"✓ Physical properties inferred (mass: {mass}kg, restitution: {restitution})")
 
     if not USE_SCALING:
         scaling = 1.0
@@ -222,7 +223,7 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     # Convert GLB mesh to USD with physics properties
     status.start("🔧 Converting mesh to USD format...")
     print("\nConverting mesh to USD format...")
-    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds)
+    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution)
     print(f"✓ Mesh converted to USD: {usd_file}")
     status.stop("✓ Mesh converted to USD with physics properties")
 
@@ -485,7 +486,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
-def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str:
+def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None) -> str:
     """
     Convert GLB mesh to USD format via the persistent Isaac worker API.
     """
@@ -512,6 +513,7 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None) -> str
         "mass": mass,
         "static_friction": ds,
         "dynamic_friction": df,
+        "restitution": restitution,
     }
 
     # Send the conversion request to the persistent worker

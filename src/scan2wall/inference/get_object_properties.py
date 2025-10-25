@@ -32,12 +32,22 @@ Return ONLY valid JSON in this exact schema:
     "static": float,
     "dynamic": float
   },
+  "restitution": {
+    "value": float,
+    "description": "string"
+  },
   "assumptions": ["string"],
   "confidence_overall": 0..1
 }
 
 Guidelines:
 - Estimate static and dynamic friction coefficients between the object and a generic smooth horizontal surface (e.g., steel or wood table).
+- Estimate coefficient of restitution (bounciness) for the object:
+  * 0.0 = no bounce (clay, soft fabric, pillow)
+  * 0.1-0.3 = low bounce (wood block, ceramic plate)
+  * 0.4-0.6 = moderate bounce (plastic, tennis racket, basketball)
+  * 0.7-0.8 = high bounce (rubber ball, bouncy ball)
+  * 0.9+ = very high bounce (superball, steel on steel)
 - Use typical values from physics data for the predicted material(s).
 - Return only the JSON, no prose.
 """
@@ -45,23 +55,54 @@ Guidelines:
 def get_object_properties(image_path):
     img = Image.open(image_path)
 
+    # Configure safety settings to be more permissive for technical analysis
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     # Call the model
-    response = model.generate_content(
-        [prompt, img],
-        generation_config={
-            "temperature": 0.2,
-            "max_output_tokens": 2048,
-            "response_mime_type": "application/json",
-        },
-    )
-
-    # Parse response JSON
     try:
-        result = json.loads(response.text)
-    except json.JSONDecodeError:
-        result = {"error": "Invalid JSON returned", "raw": response.text}
+        response = model.generate_content(
+            [prompt, img],
+            generation_config={
+                "temperature": 0.2,
+                "max_output_tokens": 2048,
+                "response_mime_type": "application/json",
+            },
+            safety_settings=safety_settings,
+        )
 
-    return result
+        # Check if response has valid content
+        if not response.candidates:
+            print(f"⚠ Gemini returned no candidates for property inference")
+            return {"error": "No response from Gemini", "raw": "No candidates returned"}
+
+        candidate = response.candidates[0]
+        finish_reason_value = int(candidate.finish_reason)
+
+        if finish_reason_value != 1:  # 1 = STOP (successful completion)
+            print(f"⚠ Gemini stopped with finish_reason: {candidate.finish_reason} (value={finish_reason_value})")
+            if finish_reason_value == 3:  # SAFETY
+                print("⚠ Content blocked by safety filters")
+            return {
+                "error": f"Gemini API error (finish_reason={candidate.finish_reason})",
+                "raw": f"finish_reason={candidate.finish_reason}"
+            }
+
+        # Parse response JSON
+        try:
+            result = json.loads(response.text)
+        except json.JSONDecodeError:
+            result = {"error": "Invalid JSON returned", "raw": response.text}
+
+        return result
+
+    except Exception as e:
+        print(f"⚠ Gemini property inference error: {e}")
+        return {"error": str(e), "raw": str(e)}
 
 
 # Validation prompt for segmentation quality check
@@ -107,6 +148,16 @@ def validate_segmentation(image_path):
     """
     img = Image.open(image_path)
 
+    # Resize image to max 1024px for faster Gemini inference
+    # (validation doesn't need full resolution)
+    max_dimension = 1024
+    if max(img.size) > max_dimension:
+        # Calculate new size maintaining aspect ratio
+        ratio = max_dimension / max(img.size)
+        new_size = tuple(int(dim * ratio) for dim in img.size)
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+        print(f"  📐 Resized validation image: {image_path.split('/')[-1]} → {new_size[0]}x{new_size[1]}")
+
     # Call the model
     try:
         # Configure safety settings to be more permissive for technical analysis
@@ -121,7 +172,7 @@ def validate_segmentation(image_path):
             [validation_prompt, img],
             generation_config={
                 "temperature": 0.1,
-                "max_output_tokens": 2048,
+                "max_output_tokens": 1024,
             },
             safety_settings=safety_settings,
         )

@@ -483,7 +483,7 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
     )
     obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 0.5))
 
-def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
+def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0, job_id=None):
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         print("[WARN] ffmpeg not found; keeping image sequence.")
@@ -494,15 +494,16 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
         return
     digits = len(os.path.basename(pattern[0]).split("_")[1].split(".")[0])
 
-    # Add watermark with ffmpeg drawtext filter
+    # Add job ID watermark in top left corner (small and subtle)
+    watermark_text = f"job: {job_id}" if job_id else "scan2wall"
     watermark_filter = (
-        "drawtext=text='scan2wall.com':"
-        "fontsize=32:"
-        "fontcolor=white@0.8:"
-        "x=w-tw-20:"
-        "y=h-th-20:"
-        "shadowcolor=black@0.6:"
-        "shadowx=2:shadowy=2"
+        f"drawtext=text='{watermark_text}':"
+        "fontsize=16:"
+        "fontcolor=white@0.6:"
+        "x=10:"
+        "y=10:"
+        "shadowcolor=black@0.8:"
+        "shadowx=1:shadowy=1"
     )
 
     cmd = [
@@ -521,7 +522,7 @@ def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0):
     subprocess.run(cmd, check=True)
     print(f"[INFO] MP4 with watermark saved → {out_path}")
 
-def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, height=720, use_gpu=True):
+def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, height=720, use_gpu=True, job_id=None):
     """
     Encode frames directly from memory by piping raw RGB data to ffmpeg stdin.
     This eliminates the need for intermediate PNG files.
@@ -534,6 +535,7 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
         width: Frame width
         height: Frame height
         use_gpu: If True, try GPU encoding (NVENC) first, fallback to CPU if unavailable
+        job_id: Job ID to display in watermark
     """
     import subprocess
 
@@ -549,15 +551,16 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
     # Skip first N frames
     frames_to_encode = frames[skip_first:]
 
-    # Watermark filter (same as before)
+    # Job ID watermark in top left corner (small and subtle)
+    watermark_text = f"job: {job_id}" if job_id else "scan2wall"
     watermark_filter = (
-        "drawtext=text='scan2wall.com':"
-        "fontsize=32:"
-        "fontcolor=white@0.8:"
-        "x=w-tw-20:"
-        "y=h-th-20:"
-        "shadowcolor=black@0.6:"
-        "shadowx=2:shadowy=2"
+        f"drawtext=text='{watermark_text}':"
+        "fontsize=16:"
+        "fontcolor=white@0.6:"
+        "x=10:"
+        "y=10:"
+        "shadowcolor=black@0.8:"
+        "shadowx=1:shadowy=1"
     )
 
     # Build FFmpeg command based on encoder type
@@ -571,7 +574,8 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
             "-s", f"{width}x{height}",
             "-r", str(fps),
             "-i", "pipe:0",
-            # NO watermark filter - removes CPU bottleneck
+            # Small job ID watermark (minimal CPU overhead)
+            "-vf", watermark_filter,
             "-c:v", "h264_nvenc",       # NVIDIA GPU encoder
             "-preset", "p2",             # FASTEST preset (was p4)
             "-tune", "ll",               # Low-latency (disables B-frames, was hq)
@@ -632,7 +636,7 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
             # If GPU encoding failed, retry with CPU
             if use_gpu:
                 print("[WARN] GPU encoding failed, retrying with CPU encoding...")
-                return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False)
+                return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False, job_id=job_id)
 
     except Exception as e:
         print(f"[ERROR] Failed to encode video: {e}")
@@ -642,7 +646,7 @@ def ffmpeg_encode_from_memory(frames, out_path, fps, skip_first=0, width=1280, h
         # If GPU encoding failed, retry with CPU
         if use_gpu:
             print("[WARN] GPU encoding failed, retrying with CPU encoding...")
-            return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False)
+            return ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, width, height, use_gpu=False, job_id=job_id)
     finally:
         if process.stderr:
             process.stderr.close()
@@ -678,14 +682,26 @@ class RequestHandler(BaseHTTPRequestHandler):
         job_id = str(uuid.uuid4())
         print(f"🔄 Queuing conversion: {req['asset_path']} (job: {job_id})")
         
+        # Extract physics properties from request
+        mass = req.get('mass', 1.0)
+        static_friction = req.get('static_friction', 0.5)
+        dynamic_friction = req.get('dynamic_friction', 0.4)
+        restitution = req.get('restitution', 0.5)
+
         cfg = MeshConverterCfg(
             asset_path=req['asset_path'],
             usd_dir=req['usd_dir'],
             force_usd_conversion=True,
             make_instanceable=False,
-            mass_props=sim_utils.MassPropertiesCfg(mass=req.get('mass', 1.0)),
+            mass_props=sim_utils.MassPropertiesCfg(mass=mass),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(),
             collision_props=sim_utils.CollisionPropertiesCfg(),
+            # Apply physics material with friction and restitution
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=static_friction,
+                dynamic_friction=dynamic_friction,
+                restitution=restitution,
+            ),
             # Try to preserve materials by using simpler collision mesh
             collision_approximation="convexHull",  # Less aggressive than convexDecomposition
         )
@@ -1266,7 +1282,7 @@ while app_interface.is_running():
                         """Encode a single video and return timing info"""
                         start = time.time()
                         print(f"   Encoding {camera_name} camera view...")
-                        ffmpeg_encode_from_memory(frames, out_path, fps, skip_first)
+                        ffmpeg_encode_from_memory(frames, out_path, fps, skip_first, job_id=request_job_id)
                         elapsed = time.time() - start
                         print(f"   ✅ {camera_name} camera encoded in {elapsed:.2f}s")
                         return camera_name, elapsed

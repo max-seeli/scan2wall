@@ -23,7 +23,7 @@
         0
       ],
       "latents": [
-        "37",
+        "244",
         0
       ]
     },
@@ -51,7 +51,7 @@
       "guidance_scale": 3,
       "texture_size": 1024,
       "unwrap_mesh": false,
-      "seed": 653498763471428,
+      "seed": 796667860450568,
       "use_cache": true,
       "trimesh": [
         "45",
@@ -62,7 +62,7 @@
         0
       ],
       "image": [
-        "241",
+        "240",
         0
       ]
     },
@@ -93,24 +93,6 @@
     "class_type": "Hy3DBakeMultiViews",
     "_meta": {
       "title": "Hunyuan 3D 2.1 Bake MultiViews"
-    }
-  },
-  "37": {
-    "inputs": {
-      "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
-      "steps": 50,
-      "guidance_scale": 8.5,
-      "seed": 587343391031120,
-      "attention_mode": "sageattn",
-      "use_cache": true,
-      "image": [
-        "241",
-        0
-      ]
-    },
-    "class_type": "Hy3DMeshGenerator",
-    "_meta": {
-      "title": "Hunyuan 3D 2.1 Mesh Generator"
     }
   },
   "45": {
@@ -343,27 +325,45 @@
   },
   "240": {
     "inputs": {
-      "image": "505795809_633968562436541_7722140127267019676_n.jpg"
+      "image": "7f11c998_inspyre_seg_cropped_00001.png"
     },
     "class_type": "LoadImage",
     "_meta": {
       "title": "Load Image"
     }
   },
-  "241": {
+  "242": {
     "inputs": {
+      "border_ratio": 0.15,
+      "size": 518,
       "image": [
         "240",
         0
-      ],
-      "alpha": [
-        "240",
-        1
       ]
     },
-    "class_type": "JoinImageWithAlpha",
+    "class_type": "PrepareImageForDINO",
     "_meta": {
-      "title": "Join Image with Alpha"
+      "title": "Prepare Image for DINO"
+    }
+  },
+  "244": {
+    "inputs": {
+      "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
+      "steps": 50,
+      "guidance_scale": 8.5,
+      "seed": 350345230165009,
+      "attention_mode": "sageattn",
+      "use_cache": true,
+      "border_ratio": 0.15,
+      "skip_preprocessing": false,
+      "image": [
+        "242",
+        0
+      ]
+    },
+    "class_type": "Hy3DImageToLatents",
+    "_meta": {
+      "title": "Hunyuan 3D: Image to Latents (Simple)"
     }
   }
 }

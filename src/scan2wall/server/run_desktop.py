@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-VIDEO_DIR = Path("recordings")
+VIDEO_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "recordings"
 VIDEO_NAME = "sim_run.mp4"
 VIDEO_PATH = VIDEO_DIR / VIDEO_NAME
 

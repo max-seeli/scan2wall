@@ -86,6 +86,7 @@
   "43": {
     "inputs": {
       "torchscript_jit": "on",
+      "keep_model_loaded": true,
       "image": [
         "44",
         0

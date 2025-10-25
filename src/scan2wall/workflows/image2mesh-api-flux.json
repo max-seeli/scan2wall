@@ -103,7 +103,7 @@
       "seed": 1105748346461025,
       "attention_mode": "sageattn",
       "use_cache": true,
-      "image": [
+      "processed_image": [
         "259",
         2
       ]
