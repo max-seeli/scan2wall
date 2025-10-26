@@ -14,14 +14,24 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 # Prompt text enforcing JSON schema
 prompt = """
 You are a metrology assistant. From the image uploaded, infer likely real-world physical properties for the identified object.
-These will be used in a scientific simulation.
+These will be used in a scientific physics simulation with support for both rigid and deformable bodies.
+
+The image shows the original scene on the LEFT and the segmented object on the RIGHT.
+Use objects in the background (visible on the left side) to estimate scale and dimensions.
+
 Return ONLY valid JSON in this exact schema:
 
 {
+  "scene_description": "string (max 200 chars)",
   "object_type": "string",
   "use_case": "string",
   "materials": [{"name":"string","prob":0..1}],
-  "rigidity": "rigid" | "deformable",
+  "rigidity": {
+    "type": "rigid" | "deformable",
+    "youngs_modulus_gpa": float,
+    "poissons_ratio": float,
+    "description": "string"
+  },
   "dimensions_m": {
     "length": {"value": float},
     "width": {"value": float},
@@ -41,16 +51,170 @@ Return ONLY valid JSON in this exact schema:
 }
 
 Guidelines:
+- scene_description: Briefly describe what you see in the image (max 200 characters). Focus on the main object, its appearance, and surrounding context.
+
+- Use background objects (visible on the left side) to estimate the scale and dimensions of the target object. Common reference objects include: hands, tables, floors, furniture, people, doorways, windows, etc.
+
 - Estimate static and dynamic friction coefficients between the object and a generic smooth horizontal surface (e.g., steel or wood table).
+
 - Estimate coefficient of restitution (bounciness) for the object:
   * 0.0 = no bounce (clay, soft fabric, pillow)
   * 0.1-0.3 = low bounce (wood block, ceramic plate)
   * 0.4-0.6 = moderate bounce (plastic, tennis racket, basketball)
   * 0.7-0.8 = high bounce (rubber ball, bouncy ball)
   * 0.9+ = very high bounce (superball, steel on steel)
-- Use typical values from physics data for the predicted material(s).
+
+- For rigidity parameters:
+  * type: "rigid" for hard objects (metal, wood, plastic), "deformable" for soft/flexible objects (fabric, foam, rubber)
+  * youngs_modulus_gpa: Material stiffness in GPa (elastic modulus)
+    - Very stiff (rigid): 10-200 GPa (steel, aluminum, hard plastics)
+    - Moderately stiff: 1-10 GPa (wood, soft plastics)
+    - Flexible (deformable): 0.001-1 GPa (rubber, foam, fabric)
+    - Very flexible: 0.0001-0.001 GPa (soft fabrics, cushions)
+  * poissons_ratio: How much material compresses sideways when squeezed (0.0-0.5)
+    - Incompressible materials (rubber, fabric): 0.4-0.5
+    - Typical materials (plastic, wood): 0.2-0.4
+    - Compressible materials (foam, cork): 0.0-0.2
+  * description: Brief explanation of the material's mechanical behavior
+
+- Use typical values from materials science and physics data for the predicted material(s).
+- Be physically accurate - if an object is clearly rigid (like metal tools, wooden furniture), use high Young's modulus.
 - Return only the JSON, no prose.
 """
+
+def validate_and_infer_properties(image_path):
+    """
+    Combined function: validates segmentation AND infers physical properties in ONE Gemini call.
+
+    Returns:
+        dict with two keys:
+        - "validation": {"decision": "ACCEPT"/"REJECT", "description": "..."}
+        - "properties": {...full property dict...}
+    """
+    combined_prompt = """
+You are analyzing a segmentation result. The image shows the ORIGINAL scene on the LEFT and the SEGMENTED object on the RIGHT.
+
+Your task is to:
+1. VALIDATE the segmentation quality
+2. INFER physical properties of the object (if segmentation is good)
+
+Return ONLY valid JSON in this exact schema:
+
+{
+  "validation": {
+    "decision": "ACCEPT" | "REJECT",
+    "description": "string (1-2 sentences explaining the decision)"
+  },
+  "properties": {
+    "scene_description": "string (max 200 chars)",
+    "object_type": "string",
+    "use_case": "string",
+    "materials": [{"name":"string","prob":0..1}],
+    "rigidity": {
+      "type": "rigid" | "deformable",
+      "youngs_modulus_gpa": float,
+      "poissons_ratio": float,
+      "description": "string"
+    },
+    "dimensions_m": {
+      "length": {"value": float},
+      "width": {"value": float},
+      "height": {"value": float}
+    },
+    "weight_kg": {"value": float},
+    "friction_coefficients": {
+      "static": float,
+      "dynamic": float
+    },
+    "restitution": {
+      "value": float,
+      "description": "string"
+    },
+    "assumptions": ["string"],
+    "confidence_overall": 0..1
+  }
+}
+
+VALIDATION CRITERIA (decision: "ACCEPT" or "REJECT"):
+- ACCEPT if: Single, complete object with clean edges, no background artifacts
+- REJECT if: Multiple objects, incomplete/cropped object, poor edge quality, or background noise
+
+PROPERTY INFERENCE GUIDELINES (only if ACCEPT):
+- scene_description: Briefly describe what you see (max 200 chars). Focus on the main object and surrounding context.
+- Use background objects (visible on the left side) to estimate scale and dimensions. Common references: hands, tables, floors, furniture, people.
+- Estimate static and dynamic friction coefficients for the object on a smooth surface (wood/steel table).
+- Coefficient of restitution (bounciness):
+  * 0.0 = no bounce (clay, soft fabric, pillow)
+  * 0.1-0.3 = low bounce (wood, ceramic)
+  * 0.4-0.6 = moderate bounce (plastic, basketball)
+  * 0.7-0.8 = high bounce (rubber ball)
+  * 0.9+ = very high bounce (superball, steel)
+- Rigidity parameters:
+  * type: "rigid" (metal, wood, hard plastic) or "deformable" (fabric, foam, rubber)
+  * youngs_modulus_gpa: Stiffness in GPa
+    - Very stiff (rigid): 10-200 GPa (steel, aluminum)
+    - Moderately stiff: 1-10 GPa (wood, plastics)
+    - Flexible (deformable): 0.001-1 GPa (rubber, foam, fabric)
+    - Very flexible: 0.0001-0.001 GPa (soft fabrics, cushions)
+  * poissons_ratio: Compression behavior (0.0-0.5)
+    - Incompressible (rubber, fabric): 0.4-0.5
+    - Typical (plastic, wood): 0.2-0.4
+    - Compressible (foam, cork): 0.0-0.2
+
+If validation is REJECT, still provide properties as null or default values.
+Return only the JSON, no prose.
+"""
+
+    img = Image.open(image_path)
+
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
+    try:
+        response = model.generate_content(
+            [combined_prompt, img],
+            generation_config={
+                "temperature": 0.2,
+                "max_output_tokens": 2048,
+                "response_mime_type": "application/json",
+            },
+            safety_settings=safety_settings,
+        )
+
+        if not response.candidates:
+            return {
+                "validation": {"decision": "REJECT", "description": "No response from Gemini"},
+                "properties": {"error": "No response"}
+            }
+
+        candidate = response.candidates[0]
+        finish_reason_value = int(candidate.finish_reason)
+
+        if finish_reason_value != 1:
+            return {
+                "validation": {"decision": "REJECT", "description": f"Gemini error (finish_reason={candidate.finish_reason})"},
+                "properties": {"error": f"finish_reason={candidate.finish_reason}"}
+            }
+
+        try:
+            result = json.loads(response.text)
+            return result
+        except json.JSONDecodeError:
+            return {
+                "validation": {"decision": "REJECT", "description": "Invalid JSON from Gemini"},
+                "properties": {"error": "Invalid JSON", "raw": response.text}
+            }
+
+    except Exception as e:
+        return {
+            "validation": {"decision": "REJECT", "description": f"Error: {str(e)}"},
+            "properties": {"error": str(e)}
+        }
+
 
 def get_object_properties(image_path):
     img = Image.open(image_path)

@@ -1,7 +1,7 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from scan2wall.inference.get_object_properties import get_object_properties, validate_segmentation
+from scan2wall.inference.get_object_properties import get_object_properties, validate_segmentation, validate_and_infer_properties
 import requests
 import re
 import subprocess
@@ -15,6 +15,47 @@ import glob
 
 USE_LLM = True
 USE_SCALING = True
+
+
+def extract_physics_properties(props: dict, use_scaling: bool = True) -> tuple:
+    """
+    Extract physics properties from Gemini inference result.
+
+    Handles missing fields gracefully with defaults.
+
+    Args:
+        props: Properties dict from get_object_properties() or loaded from cache
+        use_scaling: Whether to compute real-world scaling from dimensions
+
+    Returns:
+        tuple: (mass, dynamic_friction, static_friction, restitution, scaling)
+               All values are floats. Returns defaults if properties missing.
+
+               Default values:
+               - mass: 1.0 kg
+               - dynamic_friction: 0.5
+               - static_friction: 0.6
+               - restitution: 0.5
+               - scaling: 1.0 meters (max dimension)
+    """
+    # Extract with safe defaults
+    mass = props.get("weight_kg", {}).get("value", 1.0)
+    df = props.get("friction_coefficients", {}).get("dynamic", 0.5)
+    ds = props.get("friction_coefficients", {}).get("static", 0.6)
+    restitution = props.get("restitution", {}).get("value", 0.5)
+
+    # Compute scaling from dimensions if available
+    scaling = 1.0  # Default
+    if use_scaling and props and "error" not in props:
+        dims = props.get("dimensions_m", {})
+        length = dims.get("length", {}).get("value", 0)
+        width = dims.get("width", {}).get("value", 0)
+        height = dims.get("height", {}).get("value", 0)
+
+        if length > 0 or width > 0 or height > 0:
+            scaling = max(length, width, height)
+
+    return mass, df, ds, restitution, scaling
 
 
 class StatusUpdater:
@@ -104,19 +145,26 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     print(f"  Cropped: {sam_result['cropped']}")
     status.stop("✓ SAM segmentation complete")
 
-    # Stage 2: Validate segmentation with Gemini (use concatenated image)
-    status.start("🤖 Validating segmentation with Gemini AI...")
-    print("Validating segmentation quality...")
-    validation_result = validate_segmentation(sam_result['concatenated'])
-    print(f"Validation result: {validation_result['decision']}")
-    print(f"Description: {validation_result['description']}")
+    # Stage 2: Validate segmentation AND infer properties with Gemini (ONE combined call)
+    status.start("🤖 Validating segmentation and inferring properties with Gemini AI...")
+    print("Validating segmentation and inferring physical properties...")
+    result = validate_and_infer_properties(sam_result['concatenated'])
+    validation_result = result.get('validation', {})
+    props = result.get('properties', {})
+
+    print(f"Validation result: {validation_result.get('decision')}")
+    print(f"Description: {validation_result.get('description')}")
 
     accepted_cropped_image = None
+    accepted_concatenated_image = None
+    accepted_props = None  # Store properties from this call
 
-    if validation_result['decision'] == "ACCEPT":
+    if validation_result.get('decision') == "ACCEPT":
         print("✓ SAM segmentation ACCEPTED")
-        status.stop("✓ Segmentation validated successfully")
+        status.stop("✓ Segmentation validated and properties inferred")
         accepted_cropped_image = sam_result['cropped']  # Use cropped for mesh gen
+        accepted_concatenated_image = sam_result['concatenated']
+        accepted_props = props  # Save properties for later use
     else:
         # SAM rejected, try Inspyre segmentation
         print("=" * 60)
@@ -137,17 +185,22 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
         print(f"  Cropped: {inspyre_result['cropped']}")
         status.stop("✓ Inspyre segmentation complete")
 
-        # Stage 4: Validate again with Gemini (use concatenated image)
-        status.start("🤖 Validating alternative segmentation...")
-        print("Validating alternative segmentation...")
-        validation_result = validate_segmentation(inspyre_result['concatenated'])
-        print(f"Validation result: {validation_result['decision']}")
-        print(f"Description: {validation_result['description']}")
+        # Stage 4: Validate and infer properties again with Gemini (use concatenated image)
+        status.start("🤖 Validating alternative segmentation and inferring properties...")
+        print("Validating alternative segmentation and inferring properties...")
+        result = validate_and_infer_properties(inspyre_result['concatenated'])
+        validation_result = result.get('validation', {})
+        props = result.get('properties', {})
 
-        if validation_result['decision'] == "ACCEPT":
+        print(f"Validation result: {validation_result.get('decision')}")
+        print(f"Description: {validation_result.get('description')}")
+
+        if validation_result.get('decision') == "ACCEPT":
             print("✓ Inspyre segmentation ACCEPTED")
-            status.stop("✓ Alternative segmentation validated successfully")
+            status.stop("✓ Alternative segmentation validated and properties inferred")
             accepted_cropped_image = inspyre_result['cropped']  # Use cropped for mesh gen
+            accepted_concatenated_image = inspyre_result['concatenated']
+            accepted_props = props  # Save properties for later use
         else:
             # Both segmentations failed
             print("=" * 60)
@@ -186,19 +239,18 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     df = None  # dynamic friction
     ds = None  # static friction
     scaling = 1.0
+    object_type = None  # object type from Gemini
+    scene_description = None  # scene description from Gemini
 
-    # Infer material properties using Gemini if enabled
-    if USE_LLM:
-        status.start("🧠 Inferring physical properties with Gemini AI...")
-        print("\nInferring material properties with Gemini...")
-        # Use the cropped segmentation image (clean object on white background)
-        inference_image = accepted_cropped_image
-        print(f"Using image for inference: {inference_image}")
-        props = get_object_properties(inference_image)
+    # Extract material properties (already inferred during validation!)
+    if USE_LLM and accepted_props:
+        print("\n✓ Using properties from validation step (already inferred)")
+        props = accepted_props
+
+        # Save properties to file
         props_file = Path(image_path) / "properties.json"
         with open(str(props_file), 'w') as f:
             json.dump(props, f, indent=2)
-
         print(f"✓ Saved properties to {props_file}")
 
         # Update jobs dict to indicate properties are available
@@ -206,24 +258,15 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
             jobs_dict[job_id]["properties_generated"] = True
 
         print(f"✓ Material properties: {props}")
-        mass = props["weight_kg"]["value"]
-        df = props["friction_coefficients"]["dynamic"]
-        ds = props["friction_coefficients"]["static"]
-        restitution = props.get("restitution", {}).get("value", 0.5)  # Default to 0.5 if missing
-        scaling = max(
-            props["dimensions_m"]["length"]["value"],
-            props["dimensions_m"]["width"]["value"],
-            props["dimensions_m"]["height"]["value"],
-        )
-        status.stop(f"✓ Physical properties inferred (mass: {mass}kg, restitution: {restitution})")
-
-    if not USE_SCALING:
-        scaling = 1.0
+        mass, df, ds, restitution, scaling = extract_physics_properties(props, use_scaling=USE_SCALING)
+        object_type = props.get("object_type", "unknown")  # Extract object type
+        scene_description = props.get("scene_description", None)  # Extract scene description
+        print(f"✓ Physical properties extracted (mass: {mass}kg, restitution: {restitution})")
 
     # Convert GLB mesh to USD with physics properties
     status.start("🔧 Converting mesh to USD format...")
     print("\nConverting mesh to USD format...")
-    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution)
+    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, object_type=object_type, scene_description=scene_description)
     print(f"✓ Mesh converted to USD: {usd_file}")
     status.stop("✓ Mesh converted to USD with physics properties")
 
@@ -486,7 +529,7 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
-def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None, scaling=None) -> str:
+def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None, scaling=None, output_dir=None, object_type=None, scene_description=None) -> str:
     """
     Convert GLB mesh to USD format via the persistent Isaac worker API.
 
@@ -499,11 +542,14 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restit
         restitution: Restitution coefficient
         scaling: Real-world size in meters (max dimension). If provided, mesh will be normalized
                  to 1x1x1 box then scaled to this size.
+        output_dir: Optional directory for USD output. If not provided, uses out_file.parent
+        object_type: Object type string from Gemini inference (e.g., "basketball", "mug")
+        scene_description: Scene description from Gemini (max 200 chars)
     """
     fname_new = fname.replace(".glb", ".usd")
     print(f"Converting {fname} → {fname_new} via Isaac worker...")
 
-    usd_dir = out_file.parent
+    usd_dir = output_dir if output_dir else out_file.parent
 
     # Convert host paths to container paths
     # Get the actual project root dynamically
@@ -525,6 +571,8 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restit
         "dynamic_friction": df,
         "restitution": restitution,
         "scaling": scaling,  # Real-world size in meters
+        "object_type": object_type,  # Object type from Gemini inference
+        "scene_description": scene_description,  # Scene description from Gemini
     }
 
     # Send the conversion request to the persistent worker

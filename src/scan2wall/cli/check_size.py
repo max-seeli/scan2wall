@@ -25,13 +25,13 @@ def check_size(file_path):
 
     suffix = file_path.suffix.lower()
 
-    if suffix == '.usd':
+    if suffix == '.usd' or suffix == '.usdz':
         _check_usd_size(file_path)
     elif suffix == '.glb':
         _check_glb_size(file_path)
     else:
         click.echo(f"❌ Error: Unsupported file type '{suffix}'")
-        click.echo("   Supported types: .usd, .glb")
+        click.echo("   Supported types: .usd, .usdz, .glb")
         sys.exit(1)
 
 
@@ -121,6 +121,73 @@ def _check_usd_size(file_path: Path):
             click.echo()
         else:
             click.echo("⚙️  Physics Properties: None found")
+            click.echo()
+
+        # Display custom metadata (object type and scene description)
+        if root_prim:
+            object_type = root_prim.GetCustomDataByKey("scan2wall:object_type")
+            scene_description = root_prim.GetCustomDataByKey("scan2wall:scene_description")
+
+            if object_type or scene_description:
+                click.echo("🏷️  Metadata:")
+                if object_type:
+                    click.echo(f"   Object type: {object_type}")
+                if scene_description:
+                    click.echo(f"   Scene: {scene_description}")
+                click.echo()
+
+        # Display texture information
+        from pxr import UsdShade
+        import os
+        textures_found = []
+
+        # Look for all shader prims that have a "texture" input
+        # (Isaac Lab's GLB converter creates separate texture sampler shaders)
+        for prim in stage.Traverse():
+            if prim.IsA(UsdShade.Shader):
+                shader = UsdShade.Shader(prim)
+
+                # Check for common texture input names
+                texture_input = shader.GetInput("texture")  # Most common
+                if not texture_input:
+                    texture_input = shader.GetInput("file")  # Alternative name
+
+                if texture_input:
+                    asset_path = texture_input.Get()
+                    if asset_path:
+                        # Get shader name to determine texture type
+                        shader_name = prim.GetName().lower()
+                        filename = os.path.basename(str(asset_path.path) if hasattr(asset_path, 'path') else str(asset_path))
+
+                        # Try to determine texture type from shader name
+                        if 'basecolor' in shader_name or 'diffuse' in shader_name or 'albedo' in shader_name:
+                            texture_type = "Base Color/Albedo"
+                        elif 'metallic' in shader_name and 'roughness' in shader_name:
+                            texture_type = "Metallic-Roughness"
+                        elif 'metallic' in shader_name:
+                            texture_type = "Metallic"
+                        elif 'roughness' in shader_name:
+                            texture_type = "Roughness"
+                        elif 'normal' in shader_name:
+                            texture_type = "Normal"
+                        elif 'emissive' in shader_name:
+                            texture_type = "Emissive"
+                        elif 'opacity' in shader_name or 'alpha' in shader_name:
+                            texture_type = "Opacity"
+                        elif 'occlusion' in shader_name or 'ao' in shader_name:
+                            texture_type = "Occlusion"
+                        else:
+                            texture_type = "Texture"
+
+                        textures_found.append(f"{texture_type}: {filename}")
+
+        if textures_found:
+            click.echo("🎨 Textures:")
+            for texture in textures_found:
+                click.echo(f"   {texture}")
+            click.echo()
+        else:
+            click.echo("🎨 Textures: None found")
             click.echo()
 
     except Exception as e:

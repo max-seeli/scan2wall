@@ -24,7 +24,7 @@ import imghdr
 from PIL import Image
 import io
 
-from scan2wall.pipeline.coordinator import process_image
+from scan2wall.pipeline.coordinator import process_image, extract_physics_properties
 
 
 # Test directories
@@ -283,8 +283,8 @@ def run_pipeline_stages(start_stage: str, end_stage: str):
         # Only process GLB files
         input_files = list(input_dir.glob("*.glb"))
     elif start_stage == "usd":
-        # Only process USD files
-        input_files = list(input_dir.glob("*.usd"))
+        # Process both USD and USDZ files
+        input_files = list(input_dir.glob("*.usd")) + list(input_dir.glob("*.usdz"))
     else:
         # For other stages, find relevant files
         input_files = list(input_dir.glob("*.*"))
@@ -692,36 +692,29 @@ def run_usd_conversion_stage(glb_files: List[Path]):
                         pass
 
             # Extract properties or use defaults
+            mass, df, ds, restitution, scaling = extract_physics_properties(
+                props if props else {},
+                use_scaling=True
+            )
+
+            # Extract object type and scene description if available
+            object_type = props.get("object_type", None) if props else None
+            scene_description = props.get("scene_description", None) if props else None
+
             if props:
-                mass = props.get("weight_kg", {}).get("value", 1.0)
-                df = props.get("friction_coefficients", {}).get("dynamic", 0.5)
-                ds = props.get("friction_coefficients", {}).get("static", 0.6)
-                restitution = props.get("restitution", {}).get("value", 0.5)
                 click.echo(f"     Using {props_source} (mass: {mass:.2f}kg)")
             else:
-                mass, df, ds, restitution = 1.0, 0.5, 0.6, 0.5
-                props_source = "defaults"
-                click.echo(f"     Using {props_source} (no properties found)")
+                click.echo(f"     Using defaults (no properties found)")
 
-            # Get real-world scaling from dimensions
-            scaling = max(
-                props.get("dimensions_m", {}).get("length", {}).get("value", 1.0),
-                props.get("dimensions_m", {}).get("width", {}).get("value", 1.0),
-                props.get("dimensions_m", {}).get("height", {}).get("value", 1.0),
-            ) if props and "error" not in props else None
-
-            if scaling:
+            if scaling and scaling > 1.0:  # Only show if non-default
                 click.echo(f"     Real-world size: {scaling:.3f}m (max dimension)")
 
             # Convert to USD
             click.echo("  🔄 Converting to USD...")
             conv_start = time.time()
 
-            # Copy GLB to TEST_USD_DIR first (convert_mesh expects it there)
-            temp_glb = TEST_USD_DIR / glb_path.name
-            shutil.copy2(glb_path, temp_glb)
-
-            usd_path = convert_mesh(temp_glb, glb_path.name, mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling)
+            # Convert GLB to USD (specify output directory to avoid copying)
+            usd_path = convert_mesh(glb_path, glb_path.name, mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, output_dir=TEST_USD_DIR, object_type=object_type, scene_description=scene_description)
             conv_time = time.time() - conv_start
 
             elapsed = time.time() - start_time
@@ -766,7 +759,7 @@ def run_simulation_stage(usd_files: List[Path]):
     TEST_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 
     for idx, usd_path in enumerate(usd_files, 1):
-        if usd_path.suffix.lower() != '.usd':
+        if usd_path.suffix.lower() not in ['.usd', '.usdz']:
             continue
 
         click.echo(f"[{idx}/{len(usd_files)}] {usd_path.name}")

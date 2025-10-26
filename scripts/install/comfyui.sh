@@ -302,11 +302,11 @@ else
         fi
     fi
 
-    # Install minimal CUDA (just compiler + headers, ~500MB instead of 8GB)
-    echo "   Installing minimal CUDA Toolkit (nvcc + headers)..."
+    # Install minimal CUDA (compiler + headers + libraries, ~600MB instead of 8GB)
+    echo "   Installing minimal CUDA Toolkit (nvcc + headers + dev libraries)..."
 
     # First attempt
-    if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
+    if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 cuda-libraries-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
         CUDA_INSTALLED=true
     else
         CUDA_INSTALLED=false
@@ -320,7 +320,7 @@ else
         sudo apt-get update -qq 2>&1 || true
 
         echo "   Retrying CUDA installation..."
-        if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
+        if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 cuda-libraries-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
             CUDA_INSTALLED=true
         fi
     fi

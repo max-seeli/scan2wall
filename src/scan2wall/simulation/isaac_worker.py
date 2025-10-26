@@ -699,6 +699,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             dynamic_friction = req.get('dynamic_friction', 0.4)
             restitution = req.get('restitution', 0.5)
             scaling = req.get('scaling', None)  # Real-world size in meters (max dimension)
+            object_type = req.get('object_type', None)  # Object type from Gemini inference
+            scene_description = req.get('scene_description', None)  # Scene description from Gemini
 
             cfg = MeshConverterCfg(
                 asset_path=req['asset_path'],
@@ -720,7 +722,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 'restitution': restitution,
                 'asset_path': req['asset_path'],
                 'usd_dir': req['usd_dir'],
-                'scaling': scaling  # Real-world size to scale to
+                'scaling': scaling,  # Real-world size to scale to
+                'object_type': object_type,  # Object type from Gemini inference
+                'scene_description': scene_description  # Scene description from Gemini
             }
             job_queue.put(('convert', job_id, convert_data))
             result = self._wait_for_result(job_id)
@@ -865,6 +869,16 @@ while app_interface.is_running():
                 from pxr import Usd, UsdPhysics, UsdShade, UsdGeom, Gf
                 stage = Usd.Stage.Open(usd_file)
 
+                # Store metadata (object type and scene description)
+                root_prim = stage.GetDefaultPrim()
+                if root_prim:
+                    if data.get('object_type'):
+                        root_prim.SetCustomDataByKey("scan2wall:object_type", data.get('object_type'))
+                        print(f"✓ Stored object type metadata: {data.get('object_type')}")
+                    if data.get('scene_description'):
+                        root_prim.SetCustomDataByKey("scan2wall:scene_description", data.get('scene_description'))
+                        print(f"✓ Stored scene description metadata: {data.get('scene_description')}")
+
                 # Normalize and scale mesh if scaling is provided
                 if data.get('scaling'):
                     print(f"📏 Normalizing and scaling mesh to {data['scaling']:.3f}m...")
@@ -941,6 +955,83 @@ while app_interface.is_running():
                         print(f"✓ Fixed texture permissions and ownership ({len(os.listdir(textures_dir))} files)")
                 except Exception as perm_err:
                     print(f"⚠ Warning: Could not fix permissions/ownership: {perm_err}")
+
+                # Create USDZ package with embedded textures using UsdUtils
+                try:
+                    from pxr import UsdUtils, Sdf
+                    import shutil
+
+                    usdz_file = usd_file.replace('.usd', '.usdz')
+                    print(f"📦 Creating USDZ package with embedded textures...")
+
+                    # Update texture paths to relative before packaging
+                    # UsdUtils.CreateNewUsdzPackage expects relative paths for proper embedding
+                    stage = Usd.Stage.Open(usd_file)
+                    modified = False
+
+                    for prim in stage.Traverse():
+                        if prim.IsA(UsdShade.Shader):
+                            shader = UsdShade.Shader(prim)
+                            texture_input = shader.GetInput("texture")
+                            if not texture_input:
+                                texture_input = shader.GetInput("file")
+
+                            if texture_input:
+                                asset_path = texture_input.Get()
+                                if asset_path:
+                                    # Convert absolute path to relative
+                                    abs_path = str(asset_path.path) if hasattr(asset_path, 'path') else str(asset_path)
+                                    if abs_path.startswith('/workspace/s2w-data/'):
+                                        # Make path relative to USD file location
+                                        texture_path = os.path.join(textures_dir, os.path.basename(abs_path))
+                                        rel_path = os.path.relpath(texture_path, os.path.dirname(usd_file))
+                                        texture_input.Set(Sdf.AssetPath(rel_path))
+                                        modified = True
+
+                    if modified:
+                        stage.Save()
+                        print(f"✓ Updated texture paths to relative")
+
+                    # Create USDZ using official USD utilities
+                    # This properly packages all dependencies and textures
+                    # Note: May throw exception if optional dependencies are missing (e.g., MDL files)
+                    # but USDZ file is still created successfully before the exception
+                    try:
+                        UsdUtils.CreateNewUsdzPackage(
+                            Sdf.AssetPath(usd_file),
+                            usdz_file
+                        )
+                    except Exception as pkg_err:
+                        # USDZ may still be created despite exception (e.g., missing MDL references)
+                        pass
+
+                    # Check if USDZ was actually created
+                    if os.path.exists(usdz_file):
+                        # Fix USDZ permissions
+                        os.chmod(usdz_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+                        os.chown(usdz_file, parent_stat.st_uid, parent_stat.st_gid)
+
+                        texture_count = len(os.listdir(textures_dir)) if os.path.exists(textures_dir) else 0
+                        print(f"✓ USDZ package created with {texture_count} embedded textures")
+                        print(f"  Standalone file: {os.path.basename(usdz_file)}")
+
+                        # Clean up: remove USD file and textures directory (keep only USDZ)
+                        try:
+                            os.remove(usd_file)
+                            print(f"✓ Removed standalone USD file (textures now embedded in USDZ)")
+
+                            if os.path.exists(textures_dir):
+                                shutil.rmtree(textures_dir)
+                                print(f"✓ Removed external textures directory")
+                        except Exception as cleanup_err:
+                            print(f"⚠ Warning: Could not clean up USD/textures: {cleanup_err}")
+                    else:
+                        print(f"⚠ Warning: USDZ file was not created at {usdz_file}")
+
+                except Exception as usdz_err:
+                    import traceback
+                    traceback.print_exc()
+                    print(f"⚠ Warning: Could not create USDZ package: {usdz_err}")
 
                 job_results[job_id] = {"status": "completed"}
                 print(f"✅ Conversion {job_id} done")
