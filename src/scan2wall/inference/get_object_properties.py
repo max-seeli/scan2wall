@@ -4,12 +4,14 @@ from PIL import Image
 import json
 import os
 import argparse
+import time
 from dotenv import load_dotenv
 
 # Configure Gemini
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+# Use 2.0 Flash - might be faster than 2.5
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Prompt text enforcing JSON schema
 prompt = """
@@ -175,6 +177,7 @@ Return only the JSON, no prose.
     }
 
     try:
+        start_time = time.time()
         response = model.generate_content(
             [combined_prompt, img],
             generation_config={
@@ -184,6 +187,8 @@ Return only the JSON, no prose.
             },
             safety_settings=safety_settings,
         )
+        elapsed = time.time() - start_time
+        print(f"  ⏱️  Gemini combined validation+inference took {elapsed:.2f}s")
 
         if not response.candidates:
             return {
@@ -217,7 +222,35 @@ Return only the JSON, no prose.
 
 
 def get_object_properties(image_path):
+    prep_start = time.time()
     img = Image.open(image_path)
+    original_size = img.size
+
+    # Resize image more aggressively for faster Gemini inference
+    # Testing with smaller sizes to reduce API latency
+    max_dimension = 768  # Trying smaller size for speed
+    if max(img.size) > max_dimension:
+        # Calculate new size maintaining aspect ratio
+        ratio = max_dimension / max(img.size)
+        new_size = tuple(int(dim * ratio) for dim in img.size)
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+        print(f"  📐 Resized property inference image: {image_path.split('/')[-1]} → {new_size[0]}x{new_size[1]}")
+
+    # Convert to RGB if needed (JPEG doesn't support alpha channel)
+    if img.mode in ('RGBA', 'LA', 'P'):
+        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+        if img.mode == 'P':
+            img = img.convert('RGBA')
+        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+        img = rgb_img
+
+    # Estimate image size in KB for correlation with upload time
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=85)  # JPEG at 85% quality for smaller size
+    img_size_kb = len(buf.getvalue()) / 1024
+    prep_elapsed = time.time() - prep_start
+    print(f"  📦 Image prep: {prep_elapsed:.3f}s, size: {img_size_kb:.1f}KB JPEG ({original_size[0]}x{original_size[1]} → {img.size[0]}x{img.size[1]})")
 
     # Configure safety settings to be more permissive for technical analysis
     safety_settings = {
@@ -229,17 +262,21 @@ def get_object_properties(image_path):
 
     # Call the model
     try:
+        start_time = time.time()
         response = model.generate_content(
             [prompt, img],
             generation_config={
-                "temperature": 0.2,
-                "max_output_tokens": 2048,
+                "temperature": 0.1,  # Lower for faster sampling
+                "max_output_tokens": 1024,  # Reduced from 2048
                 "response_mime_type": "application/json",
             },
             safety_settings=safety_settings,
         )
+        api_elapsed = time.time() - start_time
+        print(f"  ⏱️  Gemini API call: {api_elapsed:.2f}s")
 
         # Check if response has valid content
+        parse_start = time.time()
         if not response.candidates:
             print(f"⚠ Gemini returned no candidates for property inference")
             return {"error": "No response from Gemini", "raw": "No candidates returned"}
@@ -259,6 +296,8 @@ def get_object_properties(image_path):
         # Parse response JSON
         try:
             result = json.loads(response.text)
+            parse_elapsed = time.time() - parse_start
+            print(f"  📄 Response parsing: {parse_elapsed:.3f}s, response size: {len(response.text)} chars")
         except json.JSONDecodeError:
             result = {"error": "Invalid JSON returned", "raw": response.text}
 
@@ -312,17 +351,35 @@ def validate_segmentation(image_path):
     Returns:
         dict: {"decision": "ACCEPT" or "REJECT", "description": str}
     """
+    prep_start = time.time()
     img = Image.open(image_path)
+    original_size = img.size
 
-    # Resize image to max 1024px for faster Gemini inference
+    # Resize image aggressively for faster Gemini inference
     # (validation doesn't need full resolution)
-    max_dimension = 1024
+    max_dimension = 640  # Trying smaller for speed
     if max(img.size) > max_dimension:
         # Calculate new size maintaining aspect ratio
         ratio = max_dimension / max(img.size)
         new_size = tuple(int(dim * ratio) for dim in img.size)
         img = img.resize(new_size, Image.Resampling.LANCZOS)
         print(f"  📐 Resized validation image: {image_path.split('/')[-1]} → {new_size[0]}x{new_size[1]}")
+
+    # Convert to RGB if needed (for consistency with property inference)
+    if img.mode in ('RGBA', 'LA', 'P'):
+        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+        if img.mode == 'P':
+            img = img.convert('RGBA')
+        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+        img = rgb_img
+
+    # Estimate image size in KB
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=85)
+    img_size_kb = len(buf.getvalue()) / 1024
+    prep_elapsed = time.time() - prep_start
+    print(f"  📦 Image prep: {prep_elapsed:.3f}s, size: {img_size_kb:.1f}KB JPEG ({original_size[0]}x{original_size[1]} → {img.size[0]}x{img.size[1]})")
 
     # Call the model
     try:
@@ -334,16 +391,20 @@ def validate_segmentation(image_path):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
 
+        start_time = time.time()
         response = model.generate_content(
             [validation_prompt, img],
             generation_config={
-                "temperature": 0.1,
-                "max_output_tokens": 1024,
+                "temperature": 0.05,  # Very low for fast, deterministic validation
+                "max_output_tokens": 256,  # Small - we only need 2 lines
             },
             safety_settings=safety_settings,
         )
+        api_elapsed = time.time() - start_time
+        print(f"  ⏱️  Gemini API call: {api_elapsed:.2f}s")
 
         # Check if response has valid content
+        parse_start = time.time()
         if not response.candidates:
             print(f"⚠ Gemini returned no candidates")
             return {
@@ -381,6 +442,9 @@ def validate_segmentation(image_path):
             decision = "ACCEPT"
         elif "REJECT" in decision_line.upper():
             decision = "REJECT"
+
+        parse_elapsed = time.time() - parse_start
+        print(f"  📄 Response parsing: {parse_elapsed:.3f}s, response size: {len(response.text)} chars, decision: {decision}")
 
         return {
             "decision": decision,

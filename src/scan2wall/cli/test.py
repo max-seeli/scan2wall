@@ -327,8 +327,8 @@ def run_segmentation_stage(image_files: List[Path]):
     Args:
         image_files: List of input image paths
     """
-    from scan2wall.pipeline.coordinator import run_segmentation_workflow
-    from scan2wall.inference.get_object_properties import validate_segmentation
+    # Import the shared production code path
+    from scan2wall.pipeline.coordinator import run_parallel_segmentation_and_validation
 
     results = []
 
@@ -349,162 +349,88 @@ def run_segmentation_stage(image_files: List[Path]):
         start_time = time.time()
 
         try:
-            # Try SAM first
-            sam_start = time.time()
-            click.echo("  🔍 Running SAM segmentation...")
-            sam_result = run_segmentation_workflow("SAM_seg_cropped.json", str(image_path), job_id)
-            sam_time = time.time() - sam_start
-            click.echo(f"     ⏱️  SAM segmentation: {sam_time:.2f}s")
+            # Use the SAME production code path as the server
+            click.echo("  🔍 Running parallel segmentation and validation...")
+            seg_result = run_parallel_segmentation_and_validation(str(image_path), job_id)
 
-            # Validate SAM
-            val_start = time.time()
-            validation_result = validate_segmentation(sam_result['concatenated'])
-            val_time = time.time() - val_start
-            click.echo(f"     ⏱️  Gemini validation: {val_time:.2f}s")
+            elapsed = time.time() - start_time
+            click.echo(f"     ⏱️  Segmentations: {seg_result['sam_time']:.2f}s")
+            click.echo(f"     ⏱️  Gemini (4 calls): {seg_result['gemini_time']:.2f}s")
+            click.echo(f"     ⏱️  Total: {elapsed:.2f}s")
 
-            if validation_result['decision'] == "ACCEPT":
-                elapsed = time.time() - start_time
-                click.echo(f"  ✅ SAM ACCEPTED (total: {elapsed:.1f}s)")
-                click.echo(f"     {validation_result['description'][:80]}")
+            # Check if accepted
+            if seg_result['status'] == 'accepted':
+                method = seg_result['method']
+                validation = seg_result['sam_validation'] if method == 'SAM' else seg_result['inspyre_validation']
+                props = seg_result['properties']
+
+                click.echo(f"  ✅ {method} ACCEPTED (total: {elapsed:.1f}s)")
+                click.echo(f"     {validation['description'][:80]}")
 
                 # Copy to test folder
-                seg_file = Path(sam_result['cropped'])
-                dest = TEST_SEGMENTED_DIR / f"{image_path.stem}_sam_seg.png"
+                seg_file = Path(seg_result['cropped'])
+                dest = TEST_SEGMENTED_DIR / f"{image_path.stem}_{method.lower()}_seg.png"
                 shutil.copy2(seg_file, dest)
 
-                # Get and save physical properties
-                click.echo("  📊 Inferring physical properties...")
-                props_start = time.time()
-                try:
-                    from scan2wall.inference.get_object_properties import get_object_properties
-                    props = get_object_properties(str(seg_file))
+                # Properties already inferred in parallel!
+                click.echo("  📊 Saving physical properties...")
 
-                    # Check if inference failed, use defaults
-                    if "error" in props:
-                        click.echo(f"     ⚠️  Property inference failed: {props['error']}")
-                        props = {
-                            "object_type": "unknown",
-                            "weight_kg": {"value": 1.0},
-                            "friction_coefficients": {"static": 0.6, "dynamic": 0.5},
-                            "restitution": {"value": 0.5}
-                        }
-                        click.echo(f"     Using defaults (mass: 1.0kg)")
-                    else:
-                        props_time = time.time() - props_start
-                        mass = props.get("weight_kg", {}).get("value", 1.0)
-                        click.echo(f"     Properties inferred (mass: {mass:.2f}kg, {props_time:.1f}s)")
+                # Check if inference failed, use defaults
+                if "error" in props:
+                    click.echo(f"     ⚠️  Property inference failed: {props['error']}")
+                    props = {
+                        "object_type": "unknown",
+                        "weight_kg": {"value": 1.0},
+                        "friction_coefficients": {"static": 0.6, "dynamic": 0.5},
+                        "restitution": {"value": 0.5}
+                    }
+                    click.echo(f"     Using defaults (mass: 1.0kg)")
+                else:
+                    mass = props.get("weight_kg", {}).get("value", 1.0)
+                    click.echo(f"     Properties already inferred (mass: {mass:.2f}kg)")
 
-                    # Always save properties (either inferred or defaults)
-                    props_file = TEST_SEGMENTED_DIR / f"{image_path.stem}_sam_seg_properties.json"
-                    with open(props_file, 'w') as f:
-                        json.dump(props, f, indent=2)
-
-                except Exception as e:
-                    click.echo(f"     ⚠️  Property inference exception: {str(e)[:50]}")
+                # Always save properties (either inferred or defaults)
+                props_file = TEST_SEGMENTED_DIR / f"{image_path.stem}_{method.lower()}_seg_properties.json"
+                with open(props_file, 'w') as f:
+                    json.dump(props, f, indent=2)
 
                 # Clean up intermediate files from images directory
-                Path(sam_result['concatenated']).unlink(missing_ok=True)
-                Path(sam_result['cropped']).unlink(missing_ok=True)
+                Path(seg_result['sam_result']['concatenated']).unlink(missing_ok=True)
+                Path(seg_result['sam_result']['cropped']).unlink(missing_ok=True)
+                Path(seg_result['inspyre_result']['concatenated']).unlink(missing_ok=True)
+                Path(seg_result['inspyre_result']['cropped']).unlink(missing_ok=True)
 
                 results.append({
                     'filename': image_path.name,
                     'status': 'accepted',
-                    'method': 'SAM',
+                    'method': method,
                     'time': elapsed,
-                    'sam_time': sam_time,
-                    'val_time': val_time
+                    'seg_time': seg_result['sam_time'],
+                    'gemini_time': seg_result['gemini_time']
                 })
             else:
-                # Try Inspyre
-                click.echo(f"  ⚠️  SAM REJECTED: {validation_result['description'][:80]}")
-                click.echo("  🔄 Trying Inspyre segmentation...")
+                # Both rejected
+                sam_val = seg_result['sam_validation']
+                inspyre_val = seg_result['inspyre_validation']
 
-                inspyre_start = time.time()
-                inspyre_result = run_segmentation_workflow("inspyre_seg_cropped.json", str(image_path), job_id)
-                inspyre_time = time.time() - inspyre_start
-                click.echo(f"     ⏱️  Inspyre segmentation: {inspyre_time:.2f}s")
+                click.echo(f"  ❌ Both methods REJECTED (total: {elapsed:.1f}s)")
+                click.echo(f"     SAM: {sam_val['description'][:80]}")
+                click.echo(f"     Inspyre: {inspyre_val['description'][:80]}")
 
-                # Validate Inspyre
-                val2_start = time.time()
-                validation_result = validate_segmentation(inspyre_result['concatenated'])
-                val2_time = time.time() - val2_start
-                click.echo(f"     ⏱️  Gemini validation: {val2_time:.2f}s")
+                # Clean up intermediate files from images directory (rejected case)
+                Path(seg_result['sam_result']['concatenated']).unlink(missing_ok=True)
+                Path(seg_result['sam_result']['cropped']).unlink(missing_ok=True)
+                Path(seg_result['inspyre_result']['concatenated']).unlink(missing_ok=True)
+                Path(seg_result['inspyre_result']['cropped']).unlink(missing_ok=True)
 
-                elapsed = time.time() - start_time
-
-                if validation_result['decision'] == "ACCEPT":
-                    click.echo(f"  ✅ Inspyre ACCEPTED (total: {elapsed:.1f}s)")
-                    click.echo(f"     {validation_result['description'][:80]}")
-
-                    # Copy to test folder
-                    seg_file = Path(inspyre_result['cropped'])
-                    dest = TEST_SEGMENTED_DIR / f"{image_path.stem}_inspyre_seg.png"
-                    shutil.copy2(seg_file, dest)
-
-                    # Get and save physical properties
-                    click.echo("  📊 Inferring physical properties...")
-                    props_start = time.time()
-                    try:
-                        from scan2wall.inference.get_object_properties import get_object_properties
-                        props = get_object_properties(str(seg_file))
-
-                        # Check if inference failed, use defaults
-                        if "error" in props:
-                            click.echo(f"     ⚠️  Property inference failed: {props['error']}")
-                            props = {
-                                "object_type": "unknown",
-                                "weight_kg": {"value": 1.0},
-                                "friction_coefficients": {"static": 0.6, "dynamic": 0.5},
-                                "restitution": {"value": 0.5}
-                            }
-                            click.echo(f"     Using defaults (mass: 1.0kg)")
-                        else:
-                            props_time = time.time() - props_start
-                            mass = props.get("weight_kg", {}).get("value", 1.0)
-                            click.echo(f"     Properties inferred (mass: {mass:.2f}kg, {props_time:.1f}s)")
-
-                        # Always save properties (either inferred or defaults)
-                        props_file = TEST_SEGMENTED_DIR / f"{image_path.stem}_inspyre_seg_properties.json"
-                        with open(props_file, 'w') as f:
-                            json.dump(props, f, indent=2)
-
-                    except Exception as e:
-                        click.echo(f"     ⚠️  Property inference exception: {str(e)[:50]}")
-
-                    # Clean up intermediate files from images directory
-                    Path(sam_result['concatenated']).unlink(missing_ok=True)
-                    Path(sam_result['cropped']).unlink(missing_ok=True)
-                    Path(inspyre_result['concatenated']).unlink(missing_ok=True)
-                    Path(inspyre_result['cropped']).unlink(missing_ok=True)
-
-                    results.append({
-                        'filename': image_path.name,
-                        'status': 'accepted',
-                        'method': 'Inspyre',
-                        'time': elapsed,
-                        'sam_time': sam_time,
-                        'inspyre_time': inspyre_time,
-                        'val_time': val_time + val2_time
-                    })
-                else:
-                    click.echo(f"  ❌ Both methods REJECTED (total: {elapsed:.1f}s)")
-                    click.echo(f"     {validation_result['description'][:80]}")
-
-                    # Clean up intermediate files from images directory (rejected case)
-                    Path(sam_result['concatenated']).unlink(missing_ok=True)
-                    Path(sam_result['cropped']).unlink(missing_ok=True)
-                    Path(inspyre_result['concatenated']).unlink(missing_ok=True)
-                    Path(inspyre_result['cropped']).unlink(missing_ok=True)
-
-                    results.append({
-                        'filename': image_path.name,
-                        'status': 'rejected',
-                        'method': None,
-                        'time': elapsed,
-                        'sam_time': sam_time,
-                        'inspyre_time': inspyre_time,
-                        'val_time': val_time + val2_time
-                    })
+                results.append({
+                    'filename': image_path.name,
+                    'status': 'rejected',
+                    'method': None,
+                    'time': elapsed,
+                    'seg_time': seg_result['sam_time'],
+                    'gemini_time': seg_result['gemini_time']
+                })
 
         except Exception as e:
             elapsed = time.time() - start_time

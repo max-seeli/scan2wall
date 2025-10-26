@@ -1,7 +1,7 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from scan2wall.inference.get_object_properties import get_object_properties, validate_segmentation, validate_and_infer_properties
+from scan2wall.inference.get_object_properties import get_object_properties, validate_segmentation
 import requests
 import re
 import subprocess
@@ -12,9 +12,119 @@ import shutil
 import uuid
 import threading
 import glob
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 USE_LLM = True
 USE_SCALING = True
+
+
+def run_parallel_segmentation_and_validation(image_path: str, job_id: str) -> dict:
+    """
+    Run both SAM and Inspyre segmentations in parallel, then validate both with Gemini.
+
+    This is the production code path used by both the server and test CLI.
+
+    Args:
+        image_path: Path to input image
+        job_id: Unique job identifier
+
+    Returns:
+        dict with keys:
+            - 'status': 'accepted' or 'rejected'
+            - 'method': 'SAM' or 'Inspyre' or None (if rejected)
+            - 'cropped': Path to accepted cropped image (if accepted)
+            - 'concatenated': Path to accepted concatenated image (if accepted)
+            - 'properties': Physical properties dict (if accepted)
+            - 'sam_validation': SAM validation result
+            - 'inspyre_validation': Inspyre validation result
+            - 'sam_time': SAM segmentation time
+            - 'inspyre_time': Inspyre segmentation time
+            - 'gemini_time': Total Gemini inference time
+            - 'total_time': Total time
+    """
+    import time
+
+    start_time = time.time()
+
+    # Stage 1: Run BOTH segmentations in parallel
+    print("Running both segmentations in parallel (SAM + Inspyre)...")
+    seg_start = time.time()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        sam_future = executor.submit(run_segmentation_workflow, "SAM_seg_cropped.json", image_path, job_id)
+        inspyre_future = executor.submit(run_segmentation_workflow, "inspyre_seg_cropped.json", image_path, job_id)
+
+        sam_result = sam_future.result()
+        inspyre_result = inspyre_future.result()
+    seg_elapsed = time.time() - seg_start
+
+    print(f"✓ Both segmentations complete in {seg_elapsed:.2f}s")
+
+    # Stage 2: Run 4 Gemini calls in parallel (validation + properties for each method)
+    print("Running 4 parallel Gemini inferences (validation + properties)...")
+    gemini_start = time.time()
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # Submit all 4 tasks
+        sam_val_future = executor.submit(validate_segmentation, sam_result['concatenated'])
+        sam_props_future = executor.submit(get_object_properties, sam_result['concatenated'])
+        inspyre_val_future = executor.submit(validate_segmentation, inspyre_result['concatenated'])
+        inspyre_props_future = executor.submit(get_object_properties, inspyre_result['concatenated'])
+
+        # Wait for all to complete
+        sam_validation = sam_val_future.result()
+        sam_props = sam_props_future.result()
+        inspyre_validation = inspyre_val_future.result()
+        inspyre_props = inspyre_props_future.result()
+    gemini_elapsed = time.time() - gemini_start
+
+    print(f"✓ All Gemini inferences complete in {gemini_elapsed:.2f}s (4 calls in parallel)")
+    print(f"  SAM validation: {sam_validation.get('decision')} - {sam_validation.get('description')}")
+    print(f"  Inspyre validation: {inspyre_validation.get('decision')} - {inspyre_validation.get('description')}")
+
+    total_elapsed = time.time() - start_time
+
+    # Stage 3: Pick the best result (prefer SAM, fallback to Inspyre)
+    result = {
+        'sam_result': sam_result,
+        'inspyre_result': inspyre_result,
+        'sam_validation': sam_validation,
+        'inspyre_validation': inspyre_validation,
+        'sam_props': sam_props,
+        'inspyre_props': inspyre_props,
+        'sam_time': seg_elapsed,  # Both run in parallel, so time is same
+        'inspyre_time': seg_elapsed,
+        'gemini_time': gemini_elapsed,
+        'total_time': total_elapsed
+    }
+
+    if sam_validation.get('decision') == "ACCEPT":
+        print("✓ SAM segmentation ACCEPTED (using SAM result)")
+        result.update({
+            'status': 'accepted',
+            'method': 'SAM',
+            'cropped': sam_result['cropped'],
+            'concatenated': sam_result['concatenated'],
+            'properties': sam_props
+        })
+    elif inspyre_validation.get('decision') == "ACCEPT":
+        print("✓ Inspyre segmentation ACCEPTED (using Inspyre result)")
+        result.update({
+            'status': 'accepted',
+            'method': 'Inspyre',
+            'cropped': inspyre_result['cropped'],
+            'concatenated': inspyre_result['concatenated'],
+            'properties': inspyre_props
+        })
+    else:
+        print("❌ Both SAM and Inspyre segmentations REJECTED")
+        result.update({
+            'status': 'rejected',
+            'method': None,
+            'cropped': None,
+            'concatenated': None,
+            'properties': None
+        })
+
+    return result
 
 
 def extract_physics_properties(props: dict, use_scaling: bool = True) -> tuple:
@@ -133,90 +243,38 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if img is None:
         raise FileNotFoundError(f"No image found in {image_path}")
 
-    # Stage 1: Run SAM segmentation
-    status.start("🔍 Running SAM segmentation...")
+    # Run parallel segmentation and validation (shared production code path)
+    status.start("🔍 Running parallel segmentation and validation...")
     print("=" * 60)
-    print("Starting segmentation pipeline...")
+    print("Starting parallel segmentation pipeline...")
     print("=" * 60)
 
-    sam_result = run_segmentation_workflow("SAM_seg_cropped.json", str(img), job_id)
-    print(f"✓ SAM segmentation complete")
-    print(f"  Concatenated: {sam_result['concatenated']}")
-    print(f"  Cropped: {sam_result['cropped']}")
-    status.stop("✓ SAM segmentation complete")
+    seg_result = run_parallel_segmentation_and_validation(str(img), job_id)
 
-    # Stage 2: Validate segmentation AND infer properties with Gemini (ONE combined call)
-    status.start("🤖 Validating segmentation and inferring properties with Gemini AI...")
-    print("Validating segmentation and inferring physical properties...")
-    result = validate_and_infer_properties(sam_result['concatenated'])
-    validation_result = result.get('validation', {})
-    props = result.get('properties', {})
+    status.stop(f"✓ Segmentation complete ({seg_result['total_time']:.1f}s)")
 
-    print(f"Validation result: {validation_result.get('decision')}")
-    print(f"Description: {validation_result.get('description')}")
-
-    accepted_cropped_image = None
-    accepted_concatenated_image = None
-    accepted_props = None  # Store properties from this call
-
-    if validation_result.get('decision') == "ACCEPT":
-        print("✓ SAM segmentation ACCEPTED")
-        status.stop("✓ Segmentation validated and properties inferred")
-        accepted_cropped_image = sam_result['cropped']  # Use cropped for mesh gen
-        accepted_concatenated_image = sam_result['concatenated']
-        accepted_props = props  # Save properties for later use
-    else:
-        # SAM rejected, try Inspyre segmentation
+    # Check if segmentation was accepted
+    if seg_result['status'] != 'accepted':
+        # Both segmentations failed
         print("=" * 60)
-        print("DEBUG: Entering else block - SAM was rejected")
-        print(f"DEBUG: Validation decision was: {validation_result['decision']}")
+        print("❌ Both SAM and Inspyre segmentations REJECTED")
+        print(f"  SAM: {seg_result['sam_validation'].get('description')}")
+        print(f"  Inspyre: {seg_result['inspyre_validation'].get('description')}")
         print("=" * 60)
-        print("⚠ SAM segmentation REJECTED, trying Inspyre...")
-        status.stop()
+        if jobs_dict and job_id in jobs_dict:
+            jobs_dict[job_id]["status"] = "rejected"
+        error_msg = (
+            "Unfortunately, a clear mask could not be extracted from your picture! "
+            "Please go ahead and take another photo. Tips: make sure that the object is "
+            "FULLY visible, in focus, on a clear surface and that you are not holding it "
+            "with your finger occluding hands"
+        )
+        raise ValueError(error_msg)
 
-        # Stage 3: Run Inspyre segmentation
-        print("DEBUG: About to start Inspyre segmentation...")
-        status.start("🔄 Running Inspyre segmentation (alternative method)...")
-        print("Running alternative segmentation (Inspyre)...")
-        inspyre_result = run_segmentation_workflow("inspyre_seg_cropped.json", str(img), job_id)
-        print(f"DEBUG: Inspyre workflow returned: {inspyre_result}")
-        print(f"✓ Inspyre segmentation complete")
-        print(f"  Concatenated: {inspyre_result['concatenated']}")
-        print(f"  Cropped: {inspyre_result['cropped']}")
-        status.stop("✓ Inspyre segmentation complete")
-
-        # Stage 4: Validate and infer properties again with Gemini (use concatenated image)
-        status.start("🤖 Validating alternative segmentation and inferring properties...")
-        print("Validating alternative segmentation and inferring properties...")
-        result = validate_and_infer_properties(inspyre_result['concatenated'])
-        validation_result = result.get('validation', {})
-        props = result.get('properties', {})
-
-        print(f"Validation result: {validation_result.get('decision')}")
-        print(f"Description: {validation_result.get('description')}")
-
-        if validation_result.get('decision') == "ACCEPT":
-            print("✓ Inspyre segmentation ACCEPTED")
-            status.stop("✓ Alternative segmentation validated and properties inferred")
-            accepted_cropped_image = inspyre_result['cropped']  # Use cropped for mesh gen
-            accepted_concatenated_image = inspyre_result['concatenated']
-            accepted_props = props  # Save properties for later use
-        else:
-            # Both segmentations failed
-            print("=" * 60)
-            print("DEBUG: Entering nested else - Inspyre was ALSO rejected")
-            print("=" * 60)
-            print("❌ Both segmentations REJECTED")
-            status.stop("❌ Segmentation validation failed")
-            if jobs_dict and job_id in jobs_dict:
-                jobs_dict[job_id]["status"] = "rejected"
-            error_msg = (
-                "Unfortunately, a clear mask could not be extracted from your picture! "
-                "Please go ahead and take another photo. Tips: make sure that the object is "
-                "FULLY visible, in focus, on a clear surface and that you are not holding it "
-                "with your finger occluding hands"
-            )
-            raise ValueError(error_msg)
+    # Extract accepted results
+    accepted_cropped_image = seg_result['cropped']
+    accepted_concatenated_image = seg_result['concatenated']
+    accepted_props = seg_result['properties']
 
     # Generate 3D mesh via ComfyUI API using the accepted CROPPED image
     status.start("🎨 Creating 3D mesh with ComfyUI (Hunyuan 3D)...")
