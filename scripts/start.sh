@@ -287,6 +287,9 @@ tmux kill-session -t $SESSION 2>/dev/null || true
 # Create logs directory
 mkdir -p "$PROJECT_ROOT/data/logs"
 
+# Create test directories for scan2wall test pipeline
+mkdir -p "$PROJECT_ROOT/data/test"/{images,segmented,meshes,texturedmeshes,usd,videos}
+
 echo "Starting ComfyUI..."
 # Create new session with ComfyUI (with logging)
 tmux new-session -d -s $SESSION -n "comfyui" "cd $PROJECT_ROOT/3d_gen && source .venv/bin/activate && cd ComfyUI && python main.py --listen 0.0.0.0 --port 8188 2>&1 | tee $PROJECT_ROOT/data/logs/comfyui.log"

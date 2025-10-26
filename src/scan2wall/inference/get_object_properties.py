@@ -113,6 +113,7 @@ Look at the right image on the white background.
 
 Is it a single complete object (80%+ present)?
 Can you see other extra objects in the background? For example, if it was laying on a table and you can still see the table, that's an extra object.
+If there is a plug, that's an extra object. If there is just a a
 Do surfaces/walls/floors/extra objects show at the edges?
 Is it multiple instances of the same object class?
 
@@ -121,6 +122,7 @@ Is it multiple instances of the same object class?
 ACCEPT the extracted object if:
 - Single complete object (80%+ present)
 - Background is solid white(soft edges/gradients OK)
+- NO extra objects appear in the background/at the edges
 
 REJECT the extracted object if:
 - Background surfaces visible in RIGHT image (walls, floors, tables, ground)

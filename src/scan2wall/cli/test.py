@@ -38,6 +38,11 @@ TEST_USD_DIR = TEST_DIR / "usd"
 TEST_VIDEOS_DIR = TEST_DIR / "videos"
 JOBS_DIR = PROJECT_ROOT / "data" / "JOBS"
 
+# Ensure all test directories exist
+for test_dir in [TEST_DIR, TEST_IMAGES_DIR, TEST_SEGMENTED_DIR, TEST_MESHES_DIR,
+                 TEST_TEXTURED_DIR, TEST_USD_DIR, TEST_VIDEOS_DIR, JOBS_DIR]:
+    test_dir.mkdir(parents=True, exist_ok=True)
+
 # Pipeline stages in order
 PIPELINE_STAGES = ["images", "segmented", "meshes", "texturedmeshes", "usd", "videos"]
 

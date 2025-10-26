@@ -15,6 +15,14 @@ THREEGEN_DIR="$PROJECT_ROOT/3d_gen"
 echo "Installing ComfyUI in: $THREEGEN_DIR"
 cd "$THREEGEN_DIR"
 
+# Early check: Is ComfyUI already installed but CUDA missing?
+if [ -d "ComfyUI" ] && ! command -v nvcc &> /dev/null; then
+    echo ""
+    echo "⚠️  WARNING: ComfyUI directory exists but CUDA Toolkit is missing!"
+    echo "   This setup will install CUDA Toolkit (required for diso package)"
+    echo ""
+fi
+
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
     echo "❌ uv is not installed. Installing now..."
@@ -294,9 +302,30 @@ else
         fi
     fi
 
-    # Install CUDA Toolkit
-    echo "   Installing cuda-toolkit-12-8 (this may take a few minutes)..."
-    if sudo apt-get install -y cuda-toolkit-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
+    # Install minimal CUDA (just compiler + headers, ~500MB instead of 8GB)
+    echo "   Installing minimal CUDA Toolkit (nvcc + headers)..."
+
+    # First attempt
+    if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
+        CUDA_INSTALLED=true
+    else
+        CUDA_INSTALLED=false
+    fi
+
+    # Retry if installation failed due to broken mirror (404 errors)
+    if [ "$CUDA_INSTALLED" = false ] && grep -q "404.*Not Found" /tmp/cuda_install.log; then
+        echo "   ⚠️  Installation failed due to broken repository mirror"
+        echo "   Fixing APT sources and retrying..."
+        fix_apt_sources
+        sudo apt-get update -qq 2>&1 || true
+
+        echo "   Retrying CUDA installation..."
+        if sudo apt-get install -y cuda-nvcc-12-8 cuda-cudart-dev-12-8 2>&1 | tee /tmp/cuda_install.log | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$"; then
+            CUDA_INSTALLED=true
+        fi
+    fi
+
+    if [ "$CUDA_INSTALLED" = true ]; then
         echo "✅ CUDA Toolkit installed successfully"
 
         # Set CUDA_HOME
@@ -306,8 +335,11 @@ else
             export CUDA_HOME="/usr/local/cuda"
         fi
 
-        # Add to PATH
-        export PATH="$CUDA_HOME/bin:$PATH"
+        # Critical fix: Add gcc libexec to PATH so nvcc can find cc1plus
+        # Without this, diso compilation fails with "cannot execute 'cc1plus'"
+        GCC_LIBEXEC="/usr/lib/gcc/x86_64-linux-gnu/11"
+        export PATH="$GCC_LIBEXEC:$CUDA_HOME/bin:$PATH"
+        export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
 
         echo "✅ Set CUDA_HOME=$CUDA_HOME"
 
@@ -428,6 +460,16 @@ else
 fi
 
 echo ""
+echo "📦 Installing system dependencies for pymeshlab..."
+# pymeshlab requires OpenGL libraries to load its I/O plugins (for PLY, OBJ, etc.)
+if ! dpkg -l | grep -q "libopengl0"; then
+    sudo apt-get install -y libopengl0 libglx0 2>&1 | grep -v "^Get:\|^Hit:\|^Ign:" | grep -v "^$" || true
+    echo "✅ OpenGL libraries installed"
+else
+    echo "✅ OpenGL libraries already installed"
+fi
+
+echo ""
 echo "📦 Installing final dependencies..."
 
 # Install core dependencies (these should not fail)
@@ -442,6 +484,14 @@ if [ "$SKIP_CUDA_EXTENSIONS" = true ]; then
     echo "⚠️  Skipping diso installation (CUDA extensions disabled)"
     INSTALL_WARNINGS+=("diso: Skipped due to missing CUDA toolchain")
 else
+    # Set CUDA environment with gcc libexec fix for diso compilation
+    if command -v nvcc &> /dev/null && [ -n "$CUDA_HOME" ]; then
+        export PATH="/usr/lib/gcc/x86_64-linux-gnu/11:$CUDA_HOME/bin:$PATH"
+        export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+        export CC=/usr/bin/gcc
+        export CXX=/usr/bin/g++
+    fi
+
     # Temporarily disable exit on error for this optional package
     set +e
     uv pip install diso --no-build-isolation 2>&1 | tee /tmp/diso_install.log
@@ -472,6 +522,40 @@ fi
 
 # Install server dependencies
 uv pip install fastapi python-multipart uvicorn
+
+echo ""
+echo "🔍 Final validation checks..."
+echo ""
+
+# Validate CUDA installation
+if command -v nvcc &> /dev/null; then
+    echo "✅ CUDA Toolkit installed: $(nvcc --version | grep release | awk '{print $5,$6}')"
+
+    # Ensure CUDA_HOME is set and persisted
+    if [ -z "$CUDA_HOME" ]; then
+        NVCC_PATH=$(which nvcc)
+        CUDA_HOME=$(dirname $(dirname $NVCC_PATH))
+        export CUDA_HOME
+    fi
+
+    # Add CUDA to user's profile if not already there
+    PROFILE_FILE="$HOME/.bashrc"
+    if ! grep -q "CUDA_HOME" "$PROFILE_FILE" 2>/dev/null; then
+        echo "" >> "$PROFILE_FILE"
+        echo "# CUDA Toolkit (added by scan2wall setup)" >> "$PROFILE_FILE"
+        echo "export CUDA_HOME=$CUDA_HOME" >> "$PROFILE_FILE"
+        echo "# Critical: Add gcc libexec so nvcc can find cc1plus" >> "$PROFILE_FILE"
+        echo "export PATH=/usr/lib/gcc/x86_64-linux-gnu/11:\$CUDA_HOME/bin:\$PATH" >> "$PROFILE_FILE"
+        echo "export LD_LIBRARY_PATH=\$CUDA_HOME/lib64:\$LD_LIBRARY_PATH" >> "$PROFILE_FILE"
+        echo "✅ CUDA environment variables added to ~/.bashrc"
+    fi
+else
+    echo "❌ CUDA Toolkit NOT installed!"
+    echo "   This is REQUIRED for ComfyUI-MeshCraft to work properly."
+    echo "   The 'diso' package needs CUDA to compile."
+    echo ""
+    INSTALL_FAILURES+=("CUDA Toolkit: Not installed (CRITICAL)")
+fi
 
 echo ""
 echo "✅ ComfyUI setup complete!"
