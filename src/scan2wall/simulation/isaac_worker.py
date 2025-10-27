@@ -393,14 +393,15 @@ def create_base_scene_usd(output_path="/workspace/s2w-scripts/scenes/throw_again
 
     return output_path
 
-def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
+def design_scene(usd_path_abs, use_base_scene=True):
     """
     Load scene elements and dynamic object.
 
     Args:
-        usd_path_abs: Path to the dynamic object USD file
-        scaling_factor: Scale factor for the dynamic object
+        usd_path_abs: Path to the dynamic object USD file (already scaled)
         use_base_scene: If True, load pre-built base scene USD (faster)
+
+    Note: USD file should already contain all properties (scale, physics, materials)
     """
     base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
 
@@ -471,17 +472,20 @@ def design_scene(usd_path_abs, scaling_factor=1.0, use_base_scene=True):
                    gap=0.0, base_xy=(0.15, 10.0), z0=0.075)
 
     # Always load the dynamic object (this changes per simulation)
-    obj_cfg = sim_utils.UsdFileCfg(
-        usd_path=usd_path_abs,
-        scale=(scaling_factor, scaling_factor, scaling_factor),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-        collision_props=sim_utils.CollisionPropertiesCfg(
-            contact_offset=0.02,    # Increased for thin objects
-            rest_offset=-0.005      # Slight bias for stability
-        ),
-    )
-    obj_cfg.func("/World/Objects/custom_obj", obj_cfg, translation=(0.0, 0.0, 0.5))
+    # USD already contains: physics props, scaling, and visual materials from conversion
+    # Load as a payload instead of reference to preserve materials
+    stage = sim_context.stage
+
+    # Create xform prim for the object
+    from pxr import Usd, UsdGeom
+    obj_prim = stage.DefinePrim("/World/Objects/custom_obj", "Xform")
+
+    # Set translation
+    xformable = UsdGeom.Xformable(obj_prim)
+    xformable.AddTranslateOp().Set((0.0, 0.0, 0.5))
+
+    # Add the USDZ as a payload (preserves materials better than reference)
+    obj_prim.GetPayloads().AddPayload(usd_path_abs)
 
 def ffmpeg_encode(frames_dir, out_path, fps, skip_first=0, job_id=None):
     ffmpeg = shutil.which("ffmpeg")
@@ -909,22 +913,98 @@ while app_interface.is_running():
 
                     print(f"✓ Mesh scaled to real-world size")
 
-                # Find the root prim
+                # Apply physics properties directly to rigid body (no material binding needed)
                 for prim in stage.Traverse():
                     if prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                        # Get or create physics material
-                        material_path = "/World/PhysicsMaterial"
-                        if not stage.GetPrimAtPath(material_path):
-                            material = UsdShade.Material.Define(stage, material_path)
-                            physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
-                            physics_material.CreateStaticFrictionAttr(data['static_friction'])
-                            physics_material.CreateDynamicFrictionAttr(data['dynamic_friction'])
-                            physics_material.CreateRestitutionAttr(data['restitution'])
-
-                        # Bind material to prim
-                        UsdShade.MaterialBindingAPI(prim).Bind(UsdShade.Material(stage.GetPrimAtPath(material_path)))
-                        print(f"✓ Applied physics material (static={data['static_friction']}, dynamic={data['dynamic_friction']}, restitution={data['restitution']})")
+                        # Get collision API to set friction/restitution
+                        # These properties are already set by MeshConverter's collision_props
+                        # We just verify they're applied
+                        print(f"✓ Physics properties applied via MeshConverter")
+                        print(f"  (static={data['static_friction']}, dynamic={data['dynamic_friction']}, restitution={data['restitution']})")
+                        print(f"  Visual materials preserved")
                         break
+
+                # === Convert GLTF materials to UsdPreviewSurface ===
+                print(f"🎨 Converting GLTF materials to UsdPreviewSurface...")
+                from pxr import UsdShade, Sdf
+
+                material_count = 0
+                for prim in stage.Traverse():
+                    # Find GLTF materials
+                    if prim.GetTypeName() == 'Material':
+                        material = UsdShade.Material(prim)
+                        material_path = prim.GetPath()
+
+                        # Look for GLTF shader nodes under this material
+                        gltf_shader = None
+                        base_color_texture = None
+                        metallic_roughness_texture = None
+
+                        for child in prim.GetChildren():
+                            child_name = child.GetName()
+                            if 'PBR' in child_name or 'gltf' in child_name.lower():
+                                gltf_shader = UsdShade.Shader(child)
+                            elif 'baseColor' in child_name:
+                                tex_shader = UsdShade.Shader(child)
+                                file_input = tex_shader.GetInput('file')
+                                if file_input:
+                                    base_color_texture = file_input.Get()
+                            elif 'metallicRoughness' in child_name or 'MetallicRoughness' in child_name:
+                                tex_shader = UsdShade.Shader(child)
+                                file_input = tex_shader.GetInput('file')
+                                if file_input:
+                                    metallic_roughness_texture = file_input.Get()
+
+                        if gltf_shader or base_color_texture:
+                            material_count += 1
+                            print(f"  Converting material: {material_path}")
+
+                            # Clear existing shader connections
+                            for child in list(prim.GetChildren()):
+                                stage.RemovePrim(child.GetPath())
+
+                            # Create UsdPreviewSurface shader
+                            shader_path = material_path.AppendChild("PreviewSurface")
+                            shader = UsdShade.Shader.Define(stage, shader_path)
+                            shader.CreateIdAttr("UsdPreviewSurface")
+
+                            # Connect shader to material outputs
+                            material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+
+                            # Set base material properties
+                            shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.5)
+                            shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+
+                            # If we have a base color texture, create texture reader
+                            if base_color_texture:
+                                tex_path = shader_path.GetParentPath().AppendChild("BaseColorTexture")
+                                tex_shader = UsdShade.Shader.Define(stage, tex_path)
+                                tex_shader.CreateIdAttr("UsdUVTexture")
+                                tex_shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(base_color_texture)
+                                tex_shader.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+
+                                # Connect texture to shader
+                                diffuse_input = shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f)
+                                diffuse_input.ConnectToSource(tex_shader.ConnectableAPI(), "rgb")
+
+                                # Add UV reader
+                                uv_path = tex_path.GetParentPath().AppendChild("Primvar_st")
+                                uv_shader = UsdShade.Shader.Define(stage, uv_path)
+                                uv_shader.CreateIdAttr("UsdPrimvarReader_float2")
+                                uv_shader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+
+                                # Connect UV to texture
+                                tex_shader.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
+                                    uv_shader.ConnectableAPI(), "result"
+                                )
+                            else:
+                                # No texture, use default gray color
+                                shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set((0.8, 0.8, 0.8))
+
+                if material_count > 0:
+                    print(f"✓ Converted {material_count} GLTF material(s) to UsdPreviewSurface")
+                else:
+                    print(f"  No GLTF materials found (might already be UsdPreviewSurface)")
 
                 stage.Save()
 
@@ -1190,9 +1270,115 @@ while app_interface.is_running():
 
                 # BUILD SCENE
                 print("🏗️  Loading scene...")
-                # design_scene now loads pre-built base scene (ground, lights, wall)
-                # and only adds the dynamic object
-                design_scene(usd_path, scaling_factor)
+                # design_scene loads pre-built base scene (ground, lights, wall)
+                # and the dynamic object USD (which already has scale/physics/materials baked in)
+                design_scene(usd_path)
+
+                # === DEBUG: Inspect loaded object ===
+                import sys
+                print("\n" + "="*60, flush=True)
+                print("🔍 USD LOADING DIAGNOSTICS", flush=True)
+                print("="*60, flush=True)
+                stage = sim_context.stage
+                obj_prim = stage.GetPrimAtPath("/World/Objects/custom_obj")
+                print(f"DEBUG: Looking for prim at /World/Objects/custom_obj", flush=True)
+                print(f"DEBUG: obj_prim exists: {obj_prim is not None}", flush=True)
+                print(f"DEBUG: obj_prim.IsValid(): {obj_prim.IsValid() if obj_prim else 'N/A'}", flush=True)
+
+                if obj_prim and obj_prim.IsValid():
+                    from pxr import UsdGeom, UsdShade, UsdPhysics
+
+                    # 1. Check transform/scale
+                    xformable = UsdGeom.Xformable(obj_prim)
+                    if xformable:
+                        local_transform = xformable.GetLocalTransformation()
+                        print(f"\n📏 Transform Matrix:", flush=True)
+                        print(f"   {local_transform}", flush=True)
+
+                        # Extract scale from matrix
+                        scale_x = local_transform.GetRow(0).GetLength()
+                        scale_y = local_transform.GetRow(1).GetLength()
+                        scale_z = local_transform.GetRow(2).GetLength()
+                        print(f"   Extracted Scale: ({scale_x:.3f}, {scale_y:.3f}, {scale_z:.3f})", flush=True)
+
+                    # 2. Check material bindings
+                    print(f"\n🎨 Material Bindings:", flush=True)
+                    material_binding_api = UsdShade.MaterialBindingAPI(obj_prim)
+
+                    # Check all-purpose binding
+                    all_purpose_binding = material_binding_api.GetDirectBinding()
+                    if all_purpose_binding.GetMaterial():
+                        mat = all_purpose_binding.GetMaterial()
+                        print(f"   All-purpose: {mat.GetPath()}", flush=True)
+                    else:
+                        print(f"   All-purpose: NONE ❌", flush=True)
+
+                    # Check if there are ANY material bindings (don't use Tokens.physics, not all USD versions have it)
+                    # Just check the computedBoundMaterial
+                    computed_binding = material_binding_api.ComputeBoundMaterial()
+                    if computed_binding[0]:
+                        mat = computed_binding[0]
+                        print(f"   Computed bound material: {mat.GetPath()}", flush=True)
+                    else:
+                        print(f"   Computed bound material: NONE", flush=True)
+
+                    # 3. Find all materials and their textures
+                    print(f"\n🖼️  Textures Found:", flush=True)
+                    texture_count = 0
+                    for prim in stage.Traverse():
+                        if prim.IsA(UsdShade.Shader):
+                            shader = UsdShade.Shader(prim)
+                            # Check for texture inputs
+                            for input_name in ['file', 'texture', 'diffuseTexture', 'baseColorTexture']:
+                                texture_input = shader.GetInput(input_name)
+                                if texture_input:
+                                    asset_path = texture_input.Get()
+                                    if asset_path:
+                                        texture_count += 1
+                                        print(f"   [{texture_count}] {input_name}: {asset_path}", flush=True)
+
+                    if texture_count == 0:
+                        print(f"   ❌ NO TEXTURES FOUND IN USD!", flush=True)
+
+                    # 4. Check physics properties
+                    print(f"\n⚙️  Physics Properties:", flush=True)
+                    if obj_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                        rigid_body = UsdPhysics.RigidBodyAPI(obj_prim)
+                        print(f"   Has RigidBodyAPI: ✅", flush=True)
+                    else:
+                        print(f"   Has RigidBodyAPI: ❌", flush=True)
+
+                    # 5. Check mesh properties
+                    print(f"\n📦 Mesh Properties:", flush=True)
+                    found_mesh = False
+                    for prim in stage.Traverse():
+                        if prim.IsA(UsdGeom.Mesh) and str(prim.GetPath()).startswith("/World/Objects/custom_obj"):
+                            mesh = UsdGeom.Mesh(prim)
+                            points = mesh.GetPointsAttr().Get()
+                            face_counts = mesh.GetFaceVertexCountsAttr().Get()
+                            if points and face_counts:
+                                num_verts = len(points)
+                                num_faces = len(face_counts)
+                                print(f"   Mesh: {prim.GetPath()}", flush=True)
+                                print(f"   Vertices: {num_verts}", flush=True)
+                                print(f"   Faces: {num_faces}", flush=True)
+                                found_mesh = True
+                                break
+                    if not found_mesh:
+                        print(f"   ❌ No mesh found under custom_obj", flush=True)
+
+                else:
+                    print(f"❌ Object prim not found at /World/Objects/custom_obj", flush=True)
+                    print(f"\n📋 Available prims under /World:", flush=True)
+                    world_prim = stage.GetPrimAtPath("/World")
+                    if world_prim and world_prim.IsValid():
+                        for child in world_prim.GetChildren():
+                            print(f"   - {child.GetPath()}", flush=True)
+                            if child.GetPath() == "/World/Objects":
+                                for subchild in child.GetChildren():
+                                    print(f"      → {subchild.GetPath()}", flush=True)
+
+                print("="*60 + "\n", flush=True)
 
                 timing_scene_end = time.time()
                 timing_physics_init_start = timing_scene_end

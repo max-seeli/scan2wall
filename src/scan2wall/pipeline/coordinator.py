@@ -631,7 +631,7 @@ def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restit
         object_type: Object type string from Gemini inference (e.g., "basketball", "mug")
         scene_description: Scene description from Gemini (max 200 chars)
     """
-    fname_new = fname.replace(".glb", ".usd")
+    fname_new = fname.replace(".glb", ".usdz")
     print(f"Converting {fname} → {fname_new} via Isaac worker...")
 
     usd_dir = output_dir if output_dir else out_file.parent

@@ -182,6 +182,7 @@ Then answer each of the following questions with max 50 characters each.
 3 - Do 95%+ of non-white pixels represent the actual object surface? It's fine if we see a reflection/refraction on the surface, it's still surface. But if we see something through the object, that's not good.
 4 - Is it multiple instances of the same object class?
 5 - Can you see through holes in the object?
+6 - Is a hand holding the object visible?
 
 Then provide a quality score 0-100 based on:
 - 100 = Perfect extraction, clean single object
@@ -203,6 +204,7 @@ REJECT the extracted object if:
 - A 3D reconstruction algorithm being showed the right image without the scene would be confused as to the object's shape
 - Multiple objects of same class (example: 3 apples)
 - You can see THROUGH holes in the object to background elements
+- The hand/fingers holding the object is part of the mask
 
 Important: Soft fading at edges = OK.
 
@@ -223,6 +225,7 @@ Description: Clean wooden chair floating on white, complete and clear
 3 - Yes, all pixels show chair
 4 - Yes, single chair only
 5 - No
+6 - No
 Quality: 95/100
 
 Description: Sunglasses on glossy surface, reflection visible below
@@ -231,6 +234,7 @@ Description: Sunglasses on glossy surface, reflection visible below
 3 - No, ~20% pixels show reflection
 4 - Yes, single pair only
 5 - No
+6 - No
 Quality: 45/100
 """
 

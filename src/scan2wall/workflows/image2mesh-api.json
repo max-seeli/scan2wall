@@ -9,29 +9,6 @@
       "title": "Hunyuan 3D 2.1 VAE Loader"
     }
   },
-  "9": {
-    "inputs": {
-      "box_v": 1.01,
-      "octree_resolution": 256,
-      "num_chunks": 64000,
-      "mc_level": 0.002,
-      "mc_algo": "dmc",
-      "enable_flash_vdm": true,
-      "force_offload": false,
-      "vae": [
-        "4",
-        0
-      ],
-      "latents": [
-        "244",
-        0
-      ]
-    },
-    "class_type": "Hy3D21VAEDecode",
-    "_meta": {
-      "title": "Hunyuan 3D 2.1 VAE Decoder"
-    }
-  },
   "19": {
     "inputs": {
       "camera_azimuths": "0, 90, 180, 270, 0, 180",
@@ -51,7 +28,7 @@
       "guidance_scale": 3,
       "texture_size": 1024,
       "unwrap_mesh": false,
-      "seed": 796667860450568,
+      "seed": 42,
       "use_cache": true,
       "trimesh": [
         "45",
@@ -210,7 +187,7 @@
       "file_format": "stl",
       "save_file": true,
       "trimesh": [
-        "9",
+        "258",
         0
       ]
     },
@@ -272,7 +249,7 @@
       "smooth_normals": true,
       "smooth_surface": true,
       "trimesh": [
-        "9",
+        "258",
         0
       ]
     },
@@ -325,45 +302,159 @@
   },
   "240": {
     "inputs": {
-      "image": "7f11c998_inspyre_seg_cropped_00001.png"
+      "image": "495599122_3945464952385680_83033918994198047_n_inspyre_seg (1).png"
     },
     "class_type": "LoadImage",
     "_meta": {
       "title": "Load Image"
     }
   },
-  "242": {
+  "246": {
     "inputs": {
-      "border_ratio": 0.15,
-      "size": 518,
+      "invert_mask": false,
+      "detect": "mask_area",
+      "top_reserve": 20,
+      "bottom_reserve": 20,
+      "left_reserve": 20,
+      "right_reserve": 20,
+      "round_to_multiple": "8",
       "image": [
         "240",
         0
+      ],
+      "mask": [
+        "240",
+        1
       ]
     },
-    "class_type": "PrepareImageForDINO",
+    "class_type": "LayerUtility: CropByMask V2",
     "_meta": {
-      "title": "Prepare Image for DINO"
+      "title": "LayerUtility: CropByMask V2"
     }
   },
-  "244": {
+  "249": {
     "inputs": {
-      "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
-      "steps": 50,
-      "guidance_scale": 8.5,
-      "seed": 350345230165009,
-      "attention_mode": "sageattn",
-      "use_cache": true,
-      "border_ratio": 0.15,
-      "skip_preprocessing": false,
+      "width": 518,
+      "height": 518,
+      "upscale_method": "lanczos",
+      "keep_proportion": "pad",
+      "pad_color": "255, 255, 255",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
       "image": [
-        "242",
+        "246",
+        0
+      ],
+      "mask": [
+        "246",
+        1
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "251": {
+    "inputs": {
+      "model_size": "large",
+      "keep_in_memory": true
+    },
+    "class_type": "LoadDinoModel",
+    "_meta": {
+      "title": "Load DINO v2 Model"
+    }
+  },
+  "252": {
+    "inputs": {
+      "dino_model": [
+        "251",
+        0
+      ],
+      "image": [
+        "249",
         0
       ]
     },
-    "class_type": "Hy3DImageToLatents",
+    "class_type": "EncodeDINO",
     "_meta": {
-      "title": "Hunyuan 3D: Image to Latents (Simple)"
+      "title": "Encode with DINO v2"
+    }
+  },
+  "254": {
+    "inputs": {
+      "steps": 25,
+      "guidance_scale": 5,
+      "seed": 42,
+      "sigmas_str": "",
+      "dit_model": [
+        "255",
+        0
+      ],
+      "dino_embedding": [
+        "252",
+        0
+      ]
+    },
+    "class_type": "Hy3DGenerateLatents",
+    "_meta": {
+      "title": "Hunyuan 3D: Generate Latents"
+    }
+  },
+  "255": {
+    "inputs": {
+      "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
+      "attention_mode": "flash",
+      "use_cache": true
+    },
+    "class_type": "LoadHunyuanDiT",
+    "_meta": {
+      "title": "Load Hunyuan DiT Model"
+    }
+  },
+  "256": {
+    "inputs": {
+      "images": [
+        "249",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "258": {
+    "inputs": {
+      "box_v": 1.01,
+      "octree_resolution": 256,
+      "mc_level": 0,
+      "mc_algo": "dmc",
+      "num_chunks": 8000,
+      "enable_flash_vdm": true,
+      "vae": [
+        "259",
+        0
+      ],
+      "latents": [
+        "254",
+        0
+      ]
+    },
+    "class_type": "Hy3DDecodeLatents",
+    "_meta": {
+      "title": "Hunyuan 3D: Decode Latents"
+    }
+  },
+  "259": {
+    "inputs": {
+      "model": "Hunyuan3D-vae-v2-1-fp16.ckpt",
+      "use_cache": true
+    },
+    "class_type": "LoadHunyuanVAE",
+    "_meta": {
+      "title": "Load Hunyuan VAE"
     }
   }
 }
