@@ -364,7 +364,8 @@ def run_segmentation_stage(image_files: List[Path]):
                 validation = seg_result['sam_validation'] if method == 'SAM' else seg_result['inspyre_validation']
                 props = seg_result['properties']
 
-                click.echo(f"  ✅ {method} ACCEPTED (total: {elapsed:.1f}s)")
+                score = validation.get('score', 'N/A')
+                click.echo(f"  ✅ {method} ACCEPTED (score: {score}, total: {elapsed:.1f}s)")
                 click.echo(f"     {validation['description'][:80]}")
 
                 # Copy to test folder
@@ -413,9 +414,12 @@ def run_segmentation_stage(image_files: List[Path]):
                 sam_val = seg_result['sam_validation']
                 inspyre_val = seg_result['inspyre_validation']
 
+                sam_score = sam_val.get('score', 'N/A')
+                inspyre_score = inspyre_val.get('score', 'N/A')
+
                 click.echo(f"  ❌ Both methods REJECTED (total: {elapsed:.1f}s)")
-                click.echo(f"     SAM: {sam_val['description'][:80]}")
-                click.echo(f"     Inspyre: {inspyre_val['description'][:80]}")
+                click.echo(f"     SAM (score: {sam_score}): {sam_val['description'][:80]}")
+                click.echo(f"     Inspyre (score: {inspyre_score}): {inspyre_val['description'][:80]}")
 
                 # Clean up intermediate files from images directory (rejected case)
                 Path(seg_result['sam_result']['concatenated']).unlink(missing_ok=True)

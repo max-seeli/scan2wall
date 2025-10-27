@@ -77,12 +77,12 @@ def run_parallel_segmentation_and_validation(image_path: str, job_id: str) -> di
     gemini_elapsed = time.time() - gemini_start
 
     print(f"✓ All Gemini inferences complete in {gemini_elapsed:.2f}s (4 calls in parallel)")
-    print(f"  SAM validation: {sam_validation.get('decision')} - {sam_validation.get('description')}")
-    print(f"  Inspyre validation: {inspyre_validation.get('decision')} - {inspyre_validation.get('description')}")
+    print(f"  SAM validation: {sam_validation.get('decision')} (score: {sam_validation.get('score', 'N/A')}) - {sam_validation.get('description')}")
+    print(f"  Inspyre validation: {inspyre_validation.get('decision')} (score: {inspyre_validation.get('score', 'N/A')}) - {inspyre_validation.get('description')}")
 
     total_elapsed = time.time() - start_time
 
-    # Stage 3: Pick the best result (prefer SAM, fallback to Inspyre)
+    # Stage 3: Pick the best result using scores
     result = {
         'sam_result': sam_result,
         'inspyre_result': inspyre_result,
@@ -96,26 +96,43 @@ def run_parallel_segmentation_and_validation(image_path: str, job_id: str) -> di
         'total_time': total_elapsed
     }
 
-    if sam_validation.get('decision') == "ACCEPT":
-        print("✓ SAM segmentation ACCEPTED (using SAM result)")
-        result.update({
-            'status': 'accepted',
-            'method': 'SAM',
-            'cropped': sam_result['cropped'],
-            'concatenated': sam_result['concatenated'],
-            'properties': sam_props
-        })
-    elif inspyre_validation.get('decision') == "ACCEPT":
-        print("✓ Inspyre segmentation ACCEPTED (using Inspyre result)")
-        result.update({
-            'status': 'accepted',
-            'method': 'Inspyre',
-            'cropped': inspyre_result['cropped'],
-            'concatenated': inspyre_result['concatenated'],
-            'properties': inspyre_props
-        })
+    # Extract decisions and scores
+    sam_decision = sam_validation.get('decision')
+    inspyre_decision = inspyre_validation.get('decision')
+    sam_score = sam_validation.get('score', 0)  # Default to 0 if None
+    inspyre_score = inspyre_validation.get('score', 0)
+
+    # Decision logic based on ACCEPT/REJECT and scores
+    sam_accepted = sam_decision == "ACCEPT"
+    inspyre_accepted = inspyre_decision == "ACCEPT"
+
+    if sam_accepted and inspyre_accepted:
+        # Both accepted - choose higher score
+        if sam_score >= inspyre_score:
+            print(f"✓ Both segmentations ACCEPTED - SAM score {sam_score} >= Inspyre score {inspyre_score} (using SAM)")
+            chosen_method = 'SAM'
+            chosen_result = sam_result
+            chosen_props = sam_props
+        else:
+            print(f"✓ Both segmentations ACCEPTED - Inspyre score {inspyre_score} > SAM score {sam_score} (using Inspyre)")
+            chosen_method = 'Inspyre'
+            chosen_result = inspyre_result
+            chosen_props = inspyre_props
+    elif sam_accepted:
+        # Only SAM accepted
+        print(f"✓ SAM segmentation ACCEPTED (score: {sam_score}), Inspyre REJECTED (score: {inspyre_score}) - using SAM")
+        chosen_method = 'SAM'
+        chosen_result = sam_result
+        chosen_props = sam_props
+    elif inspyre_accepted:
+        # Only Inspyre accepted
+        print(f"✓ Inspyre segmentation ACCEPTED (score: {inspyre_score}), SAM REJECTED (score: {sam_score}) - using Inspyre")
+        chosen_method = 'Inspyre'
+        chosen_result = inspyre_result
+        chosen_props = inspyre_props
     else:
-        print("❌ Both SAM and Inspyre segmentations REJECTED")
+        # Both rejected - report scores for diagnostics
+        print(f"❌ Both SAM and Inspyre segmentations REJECTED (SAM score: {sam_score}, Inspyre score: {inspyre_score})")
         result.update({
             'status': 'rejected',
             'method': None,
@@ -123,6 +140,16 @@ def run_parallel_segmentation_and_validation(image_path: str, job_id: str) -> di
             'concatenated': None,
             'properties': None
         })
+        return result
+
+    # Update result with chosen segmentation
+    result.update({
+        'status': 'accepted',
+        'method': chosen_method,
+        'cropped': chosen_result['cropped'],
+        'concatenated': chosen_result['concatenated'],
+        'properties': chosen_props
+    })
 
     return result
 

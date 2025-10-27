@@ -5,6 +5,7 @@ import json
 import os
 import argparse
 import time
+import re
 from dotenv import load_dotenv
 
 # Configure Gemini
@@ -14,20 +15,16 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Prompt text enforcing JSON schema
-prompt = """
-You are a metrology assistant. From the image uploaded, infer likely real-world physical properties for the identified object.
-These will be used in a scientific physics simulation with support for both rigid and deformable bodies.
+prompt = """LEFT: Original image/photo
+RIGHT: Extraction mask of principal object from segmentation of the original image.
 
-The image shows the original scene on the LEFT and the segmented object on the RIGHT.
-Use objects in the background (visible on the left side) to estimate scale and dimensions.
-
+You are a metrology assistant asked to estimate the physical properties and size of the principal object.
 Return ONLY valid JSON in this exact schema:
 
 {
   "scene_description": "string (max 200 chars)",
   "object_type": "string",
   "use_case": "string",
-  "materials": [{"name":"string","prob":0..1}],
   "rigidity": {
     "type": "rigid" | "deformable",
     "youngs_modulus_gpa": float,
@@ -49,177 +46,41 @@ Return ONLY valid JSON in this exact schema:
     "description": "string"
   },
   "assumptions": ["string"],
-  "confidence_overall": 0..1
 }
 
 Guidelines:
-- scene_description: Briefly describe what you see in the image (max 200 characters). Focus on the main object, its appearance, and surrounding context.
+- scene_description: Briefly describe what you see in the scene on the left (max 200 characters). Focus on the main object, its appearance, and surrounding context. 
 
-- Use background objects (visible on the left side) to estimate the scale and dimensions of the target object. Common reference objects include: hands, tables, floors, furniture, people, doorways, windows, etc.
+- dimensions_m: Use background objects (visible on the left side) to estimate the scale and dimensions of the target object. Common reference objects include: hands, tables, floors, furniture, people, doorways, windows, etc.
 
-- Estimate static and dynamic friction coefficients between the object and a generic smooth horizontal surface (e.g., steel or wood table).
+- friction_coefficients: Estimate static and dynamic friction coefficients between the object and a generic smooth horizontal surface (e.g., steel or wood table).
 
-- Estimate coefficient of restitution (bounciness) for the object:
-  * 0.0 = no bounce (clay, soft fabric, pillow)
-  * 0.1-0.3 = low bounce (wood block, ceramic plate)
-  * 0.4-0.6 = moderate bounce (plastic, tennis racket, basketball)
-  * 0.7-0.8 = high bounce (rubber ball, bouncy ball)
-  * 0.9+ = very high bounce (superball, steel on steel)
+- restitution: estimate coefficient of restitution (bounciness) for the object:
+  0.0-0.1 = no/minimal bounce (clay, pillow, sandbag)
+  0.2-0.4 = low bounce (wood block, book, ceramic plate)
+  0.5-0.7 = moderate bounce (plastic toys, tennis ball, soccer ball)
+  0.75-0.85 = high bounce (basketball, rubber ball, golf ball)
+  0.9+ = very high bounce (superball, steel ball bearing)
 
-- For rigidity parameters:
-  * type: "rigid" for hard objects (metal, wood, plastic), "deformable" for soft/flexible objects (fabric, foam, rubber)
+- rigidity:
+  * type: "rigid" for hard objects (metal, wood, hard plastic), "deformable" for soft/flexible objects (fabric, foam, rubber)
+  
   * youngs_modulus_gpa: Material stiffness in GPa (elastic modulus)
-    - Very stiff (rigid): 10-200 GPa (steel, aluminum, hard plastics)
-    - Moderately stiff: 1-10 GPa (wood, soft plastics)
-    - Flexible (deformable): 0.001-1 GPa (rubber, foam, fabric)
-    - Very flexible: 0.0001-0.001 GPa (soft fabrics, cushions)
-  * poissons_ratio: How much material compresses sideways when squeezed (0.0-0.5)
-    - Incompressible materials (rubber, fabric): 0.4-0.5
-    - Typical materials (plastic, wood): 0.2-0.4
-    - Compressible materials (foam, cork): 0.0-0.2
-  * description: Brief explanation of the material's mechanical behavior
+    - Very stiff (rigid): 70-200 GPa (steel, aluminum, glass, ceramics)
+    - Stiff: 10-70 GPa (brass, concrete, bone)
+    - Moderately stiff: 1-10 GPa (wood, hard plastics like acrylic, nylon)
+    - Flexible (deformable): 0.01-1 GPa (soft plastics, leather, rubber)
+    - Very flexible: 0.0001-0.01 GPa (foam, silicone, soft fabrics)
+  * poissons_ratio: How much material expands laterally when stretched (typically 0.0-0.5)
+    - Nearly incompressible (rubber, soft tissue): 0.45-0.5
+    - Typical solids (metals, plastics, wood): 0.25-0.35
+    - Foams and porous materials: 0.1-0.25
+    - Cork (highly compressible): ~0.0
+  * description: Brief explanation of the material's mechanical behavior (e.g., "bends easily", "rigid frame", "soft cushion")
 
-- Use typical values from materials science and physics data for the predicted material(s).
 - Be physically accurate - if an object is clearly rigid (like metal tools, wooden furniture), use high Young's modulus.
 - Return only the JSON, no prose.
 """
-
-def validate_and_infer_properties(image_path):
-    """
-    Combined function: validates segmentation AND infers physical properties in ONE Gemini call.
-
-    Returns:
-        dict with two keys:
-        - "validation": {"decision": "ACCEPT"/"REJECT", "description": "..."}
-        - "properties": {...full property dict...}
-    """
-    combined_prompt = """
-You are analyzing a segmentation result. The image shows the ORIGINAL scene on the LEFT and the SEGMENTED object on the RIGHT.
-
-Your task is to:
-1. VALIDATE the segmentation quality
-2. INFER physical properties of the object (if segmentation is good)
-
-Return ONLY valid JSON in this exact schema:
-
-{
-  "validation": {
-    "decision": "ACCEPT" | "REJECT",
-    "description": "string (1-2 sentences explaining the decision)"
-  },
-  "properties": {
-    "scene_description": "string (max 200 chars)",
-    "object_type": "string",
-    "use_case": "string",
-    "materials": [{"name":"string","prob":0..1}],
-    "rigidity": {
-      "type": "rigid" | "deformable",
-      "youngs_modulus_gpa": float,
-      "poissons_ratio": float,
-      "description": "string"
-    },
-    "dimensions_m": {
-      "length": {"value": float},
-      "width": {"value": float},
-      "height": {"value": float}
-    },
-    "weight_kg": {"value": float},
-    "friction_coefficients": {
-      "static": float,
-      "dynamic": float
-    },
-    "restitution": {
-      "value": float,
-      "description": "string"
-    },
-    "assumptions": ["string"],
-    "confidence_overall": 0..1
-  }
-}
-
-VALIDATION CRITERIA (decision: "ACCEPT" or "REJECT"):
-- ACCEPT if: Single, complete object with clean edges, no background artifacts
-- REJECT if: Multiple objects, incomplete/cropped object, poor edge quality, or background noise
-
-PROPERTY INFERENCE GUIDELINES (only if ACCEPT):
-- scene_description: Briefly describe what you see (max 200 chars). Focus on the main object and surrounding context.
-- Use background objects (visible on the left side) to estimate scale and dimensions. Common references: hands, tables, floors, furniture, people.
-- Estimate static and dynamic friction coefficients for the object on a smooth surface (wood/steel table).
-- Coefficient of restitution (bounciness):
-  * 0.0 = no bounce (clay, soft fabric, pillow)
-  * 0.1-0.3 = low bounce (wood, ceramic)
-  * 0.4-0.6 = moderate bounce (plastic, basketball)
-  * 0.7-0.8 = high bounce (rubber ball)
-  * 0.9+ = very high bounce (superball, steel)
-- Rigidity parameters:
-  * type: "rigid" (metal, wood, hard plastic) or "deformable" (fabric, foam, rubber)
-  * youngs_modulus_gpa: Stiffness in GPa
-    - Very stiff (rigid): 10-200 GPa (steel, aluminum)
-    - Moderately stiff: 1-10 GPa (wood, plastics)
-    - Flexible (deformable): 0.001-1 GPa (rubber, foam, fabric)
-    - Very flexible: 0.0001-0.001 GPa (soft fabrics, cushions)
-  * poissons_ratio: Compression behavior (0.0-0.5)
-    - Incompressible (rubber, fabric): 0.4-0.5
-    - Typical (plastic, wood): 0.2-0.4
-    - Compressible (foam, cork): 0.0-0.2
-
-If validation is REJECT, still provide properties as null or default values.
-Return only the JSON, no prose.
-"""
-
-    img = Image.open(image_path)
-
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
-
-    try:
-        start_time = time.time()
-        response = model.generate_content(
-            [combined_prompt, img],
-            generation_config={
-                "temperature": 0.2,
-                "max_output_tokens": 2048,
-                "response_mime_type": "application/json",
-            },
-            safety_settings=safety_settings,
-        )
-        elapsed = time.time() - start_time
-        print(f"  ⏱️  Gemini combined validation+inference took {elapsed:.2f}s")
-
-        if not response.candidates:
-            return {
-                "validation": {"decision": "REJECT", "description": "No response from Gemini"},
-                "properties": {"error": "No response"}
-            }
-
-        candidate = response.candidates[0]
-        finish_reason_value = int(candidate.finish_reason)
-
-        if finish_reason_value != 1:
-            return {
-                "validation": {"decision": "REJECT", "description": f"Gemini error (finish_reason={candidate.finish_reason})"},
-                "properties": {"error": f"finish_reason={candidate.finish_reason}"}
-            }
-
-        try:
-            result = json.loads(response.text)
-            return result
-        except json.JSONDecodeError:
-            return {
-                "validation": {"decision": "REJECT", "description": "Invalid JSON from Gemini"},
-                "properties": {"error": "Invalid JSON", "raw": response.text}
-            }
-
-    except Exception as e:
-        return {
-            "validation": {"decision": "REJECT", "description": f"Error: {str(e)}"},
-            "properties": {"error": str(e)}
-        }
-
 
 def get_object_properties(image_path):
     prep_start = time.time()
@@ -266,8 +127,8 @@ def get_object_properties(image_path):
         response = model.generate_content(
             [prompt, img],
             generation_config={
-                "temperature": 0.1,  # Lower for faster sampling
-                "max_output_tokens": 1024,  # Reduced from 2048
+                "temperature": 0.0,  # Lower for faster sampling
+                "max_output_tokens": 2048,
                 "response_mime_type": "application/json",
             },
             safety_settings=safety_settings,
@@ -310,36 +171,68 @@ def get_object_properties(image_path):
 
 # Validation prompt for segmentation quality check
 validation_prompt = """LEFT: Original image/photo
-RIGHT: Extraction mask from segmentation of the original image.
+RIGHT: Extraction mask of principal object from segmentation of the original image.
 
 Look at the right image on the white background.
+Describe what you can see/what has been extracted from the left scene in ~100 characters.
 
-Is it a single complete object (80%+ present)?
-Can you see other extra objects in the background? For example, if it was laying on a table and you can still see the table, that's an extra object.
-If there is a plug, that's an extra object. If there is just a a
-Do surfaces/walls/floors/extra objects show at the edges?
-Is it multiple instances of the same object class?
+Then answer each of the following questions with max 50 characters each.
+1 - Is it a single complete object (80%+ present)?
+2 - Is the background clean solid white (no surfaces/tables/floors visible on the edges or through cracks?)?
+3 - Do 95%+ of non-white pixels represent the actual object surface? It's fine if we see a reflection/refraction on the surface, it's still surface. But if we see something through the object, that's not good.
+4 - Is it multiple instances of the same object class?
+5 - Can you see through holes in the object?
 
-~200 characters.
+Then provide a quality score 0-100 based on:
+- 100 = Perfect extraction, clean single object
+- 80-99 = Good, minor issues
+- 50-79 = Acceptable, some problems
+- 0-49 = Poor, major issues
+
+Then finish your message with either "ACCEPT" or "REJECT" based on the following criteria:
 
 ACCEPT the extracted object if:
 - Single complete object (80%+ present)
-- Background is solid white(soft edges/gradients OK)
-- NO extra objects appear in the background/at the edges
+- Background is solid white (soft edges/gradients are OK!)
+- NO extra objects visible
+- The non white pixels in the right show the actual object in a clear way
 
 REJECT the extracted object if:
-- Background surfaces visible in RIGHT image (walls, floors, tables, ground)
-- Cast shadows on visible ground surfaces
-- Hands visible in RIGHT image
 - Object incomplete or unrecognizable in RIGHT image
-- Several objects of the same class (example: 3 apples)
+- Hands visible in RIGHT image
+- A 3D reconstruction algorithm being showed the right image without the scene would be confused as to the object's shape
+- Multiple objects of same class (example: 3 apples)
+- You can see THROUGH holes in the object to background elements
 
-Important: Soft fading = OK. Visible surface details = REJECT.
+Important: Soft fading at edges = OK.
 
-Reply format:
-Line 1: Description (~200 chars)
-Line 2: 'ACCEPT' or 'REJECT'"""
+Format:
+Description: <your description>
+1 - <answer>
+2 - <answer>
+3 - <answer>
+4 - <answer>
+5 - <answer>
+Quality: <score>/100
 
+**Example responses:**
+
+Description: Clean wooden chair floating on white, complete and clear
+1 - Yes, complete chair ~95% present
+2 - Yes, pure white background
+3 - Yes, all pixels show chair
+4 - Yes, single chair only
+5 - No
+Quality: 95/100
+
+Description: Sunglasses on glossy surface, reflection visible below
+1 - Yes, sunglasses ~99% complete
+2 - No, mirror surface visible below
+3 - No, ~20% pixels show reflection
+4 - Yes, single pair only
+5 - No
+Quality: 45/100
+"""
 
 def validate_segmentation(image_path):
     """
@@ -395,8 +288,8 @@ def validate_segmentation(image_path):
         response = model.generate_content(
             [validation_prompt, img],
             generation_config={
-                "temperature": 0.05,  # Very low for fast, deterministic validation
-                "max_output_tokens": 256,  # Small - we only need 2 lines
+                "temperature": 0.0,  # Very low for fast, deterministic validation
+                "max_output_tokens": 4096,
             },
             safety_settings=safety_settings,
         )
@@ -410,7 +303,8 @@ def validate_segmentation(image_path):
             return {
                 "decision": "REJECT",
                 "description": "Gemini API returned no response",
-                "raw_response": "No candidates returned"
+                "raw_response": "No candidates returned",
+                "score": None
             }
 
         candidate = response.candidates[0]
@@ -427,29 +321,37 @@ def validate_segmentation(image_path):
             return {
                 "decision": "REJECT",
                 "description": f"Gemini API error (finish_reason={candidate.finish_reason})",
-                "raw_response": f"finish_reason={candidate.finish_reason}"
+                "raw_response": f"finish_reason={candidate.finish_reason}",
+                "score": None
             }
 
-        # Parse response - expecting 2 lines
         lines = response.text.strip().split('\n')
+        if not lines:  # Edge case: empty response
+            return {"decision": "REJECT", "description": "Empty response", "raw_response": "", "score": None}
 
-        description = lines[0] if len(lines) > 0 else "No description"
-        decision_line = lines[1] if len(lines) > 1 else lines[0] if len(lines) > 0 else ""
+        decision_line = lines[-1]
+        description = '\n'.join(lines[:-1]) if len(lines) > 1 else "No description"
 
-        # Extract ACCEPT or REJECT
-        decision = "REJECT"  # Default to REJECT for safety
+
+        # Extract decision
+        decision = "REJECT"
         if "ACCEPT" in decision_line.upper():
             decision = "ACCEPT"
-        elif "REJECT" in decision_line.upper():
-            decision = "REJECT"
+
+        # Extract quality score using regex pattern "Quality: X/100"
+        score = None
+        score_match = re.search(r'Quality:\s*(\d+)/100', response.text)
+        if score_match:
+            score = int(score_match.group(1))
 
         parse_elapsed = time.time() - parse_start
-        print(f"  📄 Response parsing: {parse_elapsed:.3f}s, response size: {len(response.text)} chars, decision: {decision}")
+        print(f"  📄 Response parsing: {parse_elapsed:.3f}s, response size: {len(response.text)} chars, decision: {decision}, score: {score}")
 
         return {
             "decision": decision,
             "description": description,
-            "raw_response": response.text
+            "raw_response": response.text,
+            "score": score
         }
 
     except Exception as e:
@@ -457,5 +359,6 @@ def validate_segmentation(image_path):
         return {
             "decision": "REJECT",
             "description": f"Validation error: {str(e)}",
-            "raw_response": str(e)
+            "raw_response": str(e),
+            "score": None
         }
