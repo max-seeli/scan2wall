@@ -575,96 +575,29 @@ def run_usd_conversion_stage(glb_files: List[Path]):
 
         click.echo(f"[{idx}/{len(glb_files)}] {glb_path.name}")
 
-        start_time = time.time()
-
         try:
-            # Get physical properties with priority: cached JSON > fresh inference > defaults
-            click.echo("  📊 Getting physical properties...")
+            # Find json path!
+            click.echo("  📊 Finding properties json...")
 
-            props = None
-            props_source = None
-
-            # Priority 1: Look for properties.json in texturedmeshes directory
-            props_file = glb_path.parent / f"{glb_path.stem}_properties.json"
-
-            if props_file.exists():
-                try:
-                    with open(props_file, 'r') as f:
-                        props = json.load(f)
-                    props_source = "cached (texturedmeshes)"
-                except:
-                    pass
-
-            # Priority 2: Look in segmented directory
-            # GLB files are named like: test_object_sam_seg.glb or test_object_inspyre_seg.glb
-            # Properties files are named like: test_object_sam_seg_properties.json
-            if not props:
-                seg_props_file = TEST_SEGMENTED_DIR / f"{glb_path.stem}_properties.json"
-
-                if seg_props_file.exists():
-                    try:
-                        with open(seg_props_file, 'r') as f:
-                            props = json.load(f)
-                        props_source = "cached (segmented)"
-                    except:
-                        pass
-
-            # Priority 3: Fresh inference from segmented image
-            # Segmented images have same stem as GLB: test_object_sam_seg.png
-            if not props:
-                seg_image = TEST_SEGMENTED_DIR / f"{glb_path.stem}.png"
-
-                if seg_image.exists():
-                    try:
-                        props = get_object_properties(str(seg_image))
-                        props_source = "fresh inference"
-                    except:
-                        pass
-
-            # Extract properties or use defaults
-            mass, df, ds, restitution, scaling = extract_physics_properties(
-                props if props else {},
-                use_scaling=True
-            )
-
-            # Extract object type and scene description if available
-            object_type = props.get("object_type", None) if props else None
-            scene_description = props.get("scene_description", None) if props else None
-
-            if props:
-                click.echo(f"     Using {props_source} (mass: {mass:.2f}kg)")
+            json_path = glb_path.with_suffix('.json')
+            if os.path.isfile(json_path):
+                click.echo(f"     Using {json_path}")
             else:
-                click.echo(f"     Using defaults (no properties found)")
+                click.echo(f"     Using defaults (no properties found!)")
 
-            if scaling and scaling > 1.0:  # Only show if non-default
-                click.echo(f"     Real-world size: {scaling:.3f}m (max dimension)")
-
-            # Convert to USD
-            click.echo("  🔄 Converting to USD...")
-            conv_start = time.time()
-
-            # Convert GLB to USD (specify output directory to avoid copying)
-            usd_path = convert_mesh(glb_path, glb_path.name, mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, output_dir=TEST_USD_DIR, object_type=object_type, scene_description=scene_description)
-            conv_time = time.time() - conv_start
-
-            elapsed = time.time() - start_time
-            click.echo(f"  ✅ Conversion complete ({elapsed:.1f}s)")
-            click.echo(f"     Conversion time: {conv_time:.1f}s")
+            # Convert GLB to USD (specify output directory)
+            usd_path = convert_mesh(glb_path, json_path, TEST_USD_DIR)
 
             results.append({
                 'filename': glb_path.name,
                 'status': 'success',
-                'time': elapsed,
-                'conv_time': conv_time
             })
 
         except Exception as e:
-            elapsed = time.time() - start_time
-            click.echo(f"  ❌ ERROR ({elapsed:.1f}s): {str(e)[:100]}")
+            click.echo(f"  ❌ ERROR: {str(e)[:100]}")
             results.append({
                 'filename': glb_path.name,
                 'status': 'error',
-                'time': elapsed,
                 'error': str(e)
             })
 
@@ -699,11 +632,10 @@ def run_simulation_stage(usd_files: List[Path]):
 
         try:
             # USD file is already scaled to correct size during conversion
-            # No need to apply scaling here
             click.echo("  🎮 Running physics simulation...")
             sim_start = time.time()
 
-            make_throwing_anim(str(usd_path), scaling=1.0, job_id=job_id)
+            make_throwing_anim(str(usd_path), job_id=job_id)
 
             sim_time = time.time() - sim_start
             elapsed = time.time() - start_time
@@ -840,10 +772,6 @@ def print_usd_conversion_summary(results: List[Dict]):
     click.echo(f"Total: {len(results)}")
     click.echo(f"  ✅ Success: {len(success)}")
     click.echo(f"  ❌ Errors: {len(errors)}")
-
-    if success:
-        avg_time = sum(r['time'] for r in success) / len(success)
-        click.echo(f"\nAverage conversion time: {avg_time:.1f}s")
 
     click.echo(f"\nOutputs saved to: {TEST_USD_DIR}")
 

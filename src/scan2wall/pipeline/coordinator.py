@@ -18,6 +18,19 @@ USE_LLM = True
 USE_SCALING = True
 
 
+def to_container(path):
+    """Convert host path to container path."""
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    host_data = str(project_root / "data")
+    return str(path).replace(host_data, "/workspace/s2w-data")
+
+
+def to_host(path):
+    """Convert container path to host path."""
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    return str(path).replace("/workspace/s2w-data", str(project_root / "data"))
+
+
 def run_parallel_segmentation_and_validation(image_path: str, job_id: str) -> dict:
     """
     Run both SAM and Inspyre segmentations in parallel, then validate both with Gemini.
@@ -351,7 +364,7 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     # Convert GLB mesh to USD with physics properties
     status.start("🔧 Converting mesh to USD format...")
     print("\nConverting mesh to USD format...")
-    usd_file = convert_mesh(Path(glb_path), f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, object_type=object_type, scene_description=scene_description)
+    usd_file = convert_mesh(Path(glb_path), props_file, f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, object_type=object_type, scene_description=scene_description)
     print(f"✓ Mesh converted to USD: {usd_file}")
     status.stop("✓ Mesh converted to USD with physics properties")
 
@@ -614,106 +627,43 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
-def convert_mesh(out_file: Path, fname: str, mass=None, df=None, ds=None, restitution=None, scaling=None, output_dir=None, object_type=None, scene_description=None) -> str:
-    """
-    Convert GLB mesh to USD format via the persistent Isaac worker API.
-
-    Args:
-        out_file: Path to GLB file
-        fname: Filename
-        mass: Mass in kg
-        df: Dynamic friction
-        ds: Static friction
-        restitution: Restitution coefficient
-        scaling: Real-world size in meters (max dimension). If provided, mesh will be normalized
-                 to 1x1x1 box then scaled to this size.
-        output_dir: Optional directory for USD output. If not provided, uses out_file.parent
-        object_type: Object type string from Gemini inference (e.g., "basketball", "mug")
-        scene_description: Scene description from Gemini (max 200 chars)
-    """
-    fname_new = fname.replace(".glb", ".usdz")
-    print(f"Converting {fname} → {fname_new} via Isaac worker...")
-
-    usd_dir = output_dir if output_dir else out_file.parent
-
-    # Convert host paths to container paths
-    # Get the actual project root dynamically
-    project_root = Path(__file__).resolve().parent.parent.parent.parent
-    host_data_dir = str(project_root / "data")
-
-    container_glb_path = str(out_file).replace(
-        host_data_dir, "/workspace/s2w-data"
-    )
-    container_usd_dir = str(usd_dir).replace(
-        host_data_dir, "/workspace/s2w-data"
-    )
+def convert_mesh(glb_file: Path, json_file: Path, output_dir=None) -> str:
+    """Convert GLB to USDZ via Isaac worker."""
+    usd_dir = output_dir if output_dir else glb_file.parent
 
     payload = {
-        "asset_path": container_glb_path,
-        "usd_dir": container_usd_dir,
-        "mass": mass,
-        "static_friction": ds,
-        "dynamic_friction": df,
-        "restitution": restitution,
-        "scaling": scaling,  # Real-world size in meters
-        "object_type": object_type,  # Object type from Gemini inference
-        "scene_description": scene_description,  # Scene description from Gemini
+        "glb_path": to_container(glb_file),
+        "json_path": to_container(json_file),
+        "usd_dir": to_container(usd_dir),
     }
 
-    # Send the conversion request to the persistent worker
-    try:
-        r = requests.post("http://localhost:8090/convert", json=payload, timeout=600)
-        r.raise_for_status()
-    except Exception as e:
-        raise RuntimeError(f"Mesh conversion failed: {e}")
+    r = requests.post("http://localhost:8090/convert", json=payload, timeout=600)
+    r.raise_for_status()
 
-    print("✅ Mesh conversion complete.")
-    return container_usd_dir + '/' + fname_new
+    return to_container(glb_file.with_suffix(".usdz"))
 
 
-def make_throwing_anim(file: str, scaling: float = 1.0, job_id: str = None, status_updater=None):
-    """
-    Trigger Isaac worker to run the throwing simulation and generate a video.
-    """
-    print("🎬 Creating throwing animation via Isaac worker...")
-
-    # Convert host paths to container paths dynamically
-    project_root = Path(__file__).resolve().parent.parent.parent.parent
-    host_data_dir = str(project_root / "data")
-
-    container_usd_path = file.replace(host_data_dir, "/workspace/s2w-data")
-    out_dir = str(Path(container_usd_path).parent)
+def make_throwing_anim(file: str, job_id: str = None, status_updater=None):
+    """Run throwing simulation via Isaac worker."""
+    container_path = to_container(file)
 
     payload = {
-        "usd_path": container_usd_path,
-        "out_dir": out_dir,
+        "usd_path": container_path,
+        "out_dir": str(Path(container_path).parent),
         "video": True,
         "video_length": 200,
         "fps": 50,
-        "scaling_factor": scaling,
-        "job_id": job_id,  # Pass job_id for video naming
+        "job_id": job_id,
     }
-    
-    try:
-        r = requests.post("http://localhost:8090/run_simulation", json=payload, timeout=1800)
-        r.raise_for_status()
-        result = r.json()
 
-        # Get container paths and convert to host paths
-        # Two videos: static and follow camera
-        container_video_static = result.get("video_path_static", f"{out_dir}/{job_id}_static.mp4")
-        container_video_follow = result.get("video_path_follow", f"{out_dir}/{job_id}_follow.mp4")
+    r = requests.post("http://localhost:8090/run_simulation", json=payload, timeout=1800)
+    r.raise_for_status()
+    result = r.json()
 
-        host_video_static = container_video_static.replace("/workspace/s2w-data", host_data_dir)
-        host_video_follow = container_video_follow.replace("/workspace/s2w-data", host_data_dir)
-
-        print(f"✅ Videos ready:")
-        print(f"   Static view: {host_video_static}")
-        print(f"   Follow view: {host_video_follow}")
-
-        return {"static": host_video_static, "follow": host_video_follow}
-    except Exception as e:
-        raise RuntimeError(f"Simulation failed: {e}")
+    return {
+        "static": to_host(result.get("video_path_static")),
+        "follow": to_host(result.get("video_path_follow"))
+    }
 
 if __name__ == "__main__":
     # Test/debug code

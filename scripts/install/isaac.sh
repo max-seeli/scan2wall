@@ -194,10 +194,14 @@ services:
       context: ./vscode
       network: host
     volumes:
+      - '$PROJECT_ROOT/src:/workspace/src:rw'
       - '$PROJECT_ROOT/src/scan2wall/simulation:/workspace/s2w-scripts:rw'
       - '$PROJECT_ROOT/data:/workspace/s2w-data:rw'
+    environment:
+      - PYTHONPATH=/workspace/src:\${PYTHONPATH:-}
     ports:
       - "8080:8080"
+      - "8090:8090"
     logging:
       driver: "json-file"
       options:
@@ -225,7 +229,11 @@ services:
 EOF
 
     echo -e "${GREEN}✓${NC} Docker configuration complete:"
-    echo "  • Volume mount: scan2wall/data → /workspace/s2w-data"
+    echo "  • Volume mounts:"
+    echo "    - scan2wall/src → /workspace/src (for Python imports)"
+    echo "    - scan2wall/src/scan2wall/simulation → /workspace/s2w-scripts"
+    echo "    - scan2wall/data → /workspace/s2w-data"
+    echo "  • Environment: PYTHONPATH=/workspace/src"
     echo "  • Logging: 50MB × 3 files per container"
 fi
 echo ""

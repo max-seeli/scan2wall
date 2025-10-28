@@ -136,6 +136,21 @@ def _check_usd_size(file_path: Path):
                     click.echo(f"   Scene: {scene_description}")
                 click.echo()
 
+            # Check for deformable properties
+            rigidity_type = root_prim.GetAttribute("deformable:rigidityType")
+            youngs_modulus = root_prim.GetAttribute("deformable:youngsModulus")
+            poissons_ratio = root_prim.GetAttribute("deformable:poissonsRatio")
+
+            if rigidity_type and rigidity_type.Get():
+                click.echo("🔧 Deformable Properties:")
+                click.echo(f"   Rigidity type: {rigidity_type.Get()}")
+                if youngs_modulus and youngs_modulus.Get() is not None:
+                    ym_gpa = youngs_modulus.Get() / 1e9
+                    click.echo(f"   Young's modulus: {ym_gpa:.6f} GPa")
+                if poissons_ratio and poissons_ratio.Get() is not None:
+                    click.echo(f"   Poisson's ratio: {poissons_ratio.Get():.4f}")
+                click.echo()
+
         # Display texture information
         from pxr import UsdShade
         import os

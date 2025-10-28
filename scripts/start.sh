@@ -16,6 +16,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Parse command line arguments
+ISAAC_MODE="api"  # Default: API worker mode
+if [[ "$*" == *"--gui"* ]]; then
+    ISAAC_MODE="gui"
+    echo -e "${YELLOW}Running Isaac Sim in GUI mode (interactive, streamed to browser)${NC}"
+    echo -e "${BLUE}Access Isaac Sim at: http://localhost/viewer${NC}"
+else
+    echo -e "${BLUE}Running Isaac Sim in API worker mode (for pipeline automation)${NC}"
+fi
+echo ""
+
 # Paths
 ISAAC_DIR="$PROJECT_ROOT/isaac"
 ISAAC_LAUNCHABLE_DIR="$ISAAC_DIR/isaac-launchable"
@@ -125,25 +136,67 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# Start persistent Isaac worker (FastAPI)
+# Start Isaac Sim (API worker or GUI mode)
 # ------------------------------------------------------------------------------
 echo ""
-echo "Starting persistent Isaac worker (FastAPI)..."
 
-# Kill any existing Isaac workers first
-echo "Checking for existing Isaac workers..."
-if docker exec vscode pgrep -f isaac_worker.py > /dev/null 2>&1; then
-    echo "Killing existing Isaac worker..."
-    docker exec vscode pkill -9 -f isaac_worker.py
+if [ "$ISAAC_MODE" = "gui" ]; then
+    echo "Starting Isaac Sim in interactive GUI mode..."
+    echo ""
+    echo -e "${GREEN}Isaac Sim GUI will stream to: http://localhost/viewer${NC}"
+    echo ""
+    echo "Kill any existing Isaac processes..."
+    docker exec vscode pkill -9 -f isaac_worker.py 2>/dev/null || true
+    docker exec vscode pkill -9 -f isaaclab.sh 2>/dev/null || true
+    docker exec vscode pkill -9 -f python 2>/dev/null || true
     sleep 3
+
+    # Launch Isaac Sim with GUI and WebRTC streaming
+    echo "Launching Isaac Sim (this will take 30-60 seconds)..."
+    docker exec -d vscode bash -c \
+    "cd /workspace/s2w-scripts && \
+    nohup /workspace/isaaclab/_isaac_sim/python.sh launch_gui.py > /workspace/s2w-data/logs/isaac_gui.log 2>&1 &"
+
+    echo ""
+    echo -e "${YELLOW}Note: GUI mode is interactive only - the pipeline API worker is NOT running${NC}"
+    echo -e "${YELLOW}For automated pipeline processing, restart without --gui flag${NC}"
+
+else
+    echo "Starting persistent Isaac worker (FastAPI API)..."
+
+    # Kill any existing Isaac workers first
+    echo "Checking for existing Isaac workers..."
+    if docker exec vscode pgrep -f isaac_worker.py > /dev/null 2>&1; then
+        echo "Killing existing Isaac worker..."
+        docker exec vscode pkill -9 -f isaac_worker.py
+        sleep 3
+    fi
+
+    # Now start fresh
+    docker exec -d vscode bash -c \
+    "cd /workspace/s2w-scripts && nohup /workspace/isaaclab/_isaac_sim/python.sh isaac_worker.py > /workspace/s2w-data/logs/isaac_worker.log 2>&1 &"
+
+    # Wait for Isaac worker to be ready (can take 30-60 seconds)
+    echo "Waiting for Isaac worker to initialize (this may take 30-60 seconds)..."
+    MAX_WAIT=120
+    WAITED=0
+    while [ $WAITED -lt $MAX_WAIT ]; do
+        if curl -s http://localhost:8090/ > /dev/null 2>&1; then
+            echo -e "${GREEN}✓${NC} Isaac worker is ready"
+            break
+        fi
+        sleep 3
+        WAITED=$((WAITED + 3))
+        echo -n "."
+    done
+    echo ""
+
+    if [ $WAITED -ge $MAX_WAIT ]; then
+        echo -e "${YELLOW}⚠ Isaac worker took longer than expected to start${NC}"
+        echo "Check logs: docker exec vscode tail -f /workspace/s2w-data/logs/isaac_worker.log"
+        echo "Continuing anyway..."
+    fi
 fi
-
-# Now start fresh
-docker exec -d vscode bash -c \
-"cd /workspace/s2w-scripts && nohup /workspace/isaaclab/isaaclab.sh -p isaac_worker.py > /workspace/s2w-data/logs/isaac_worker.log 2>&1 &"
-
-# Give it a few seconds to initialize
-sleep 5
 
 # Ensure ffmpeg is installed
 echo "Checking for ffmpeg in Isaac container..."
