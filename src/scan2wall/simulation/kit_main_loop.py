@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Isaac stuff
 import torch
-from pxr import Gf, Usd, Sdf, UsdGeom
+from pxr import Gf, Usd, Sdf, UsdGeom, UsdPhysics, PhysxSchema
 from isaaclab.assets import RigidObject, RigidObjectCfg, Articulation, ArticulationCfg, DeformableObject, DeformableObjectCfg
 import isaaclab.sim as sim_utils
 
@@ -35,8 +35,23 @@ from scan2wall.simulation.rendering_utils import (
     create_watermark_tensor
 )
 
+def _first_mesh_under(stage, root_path: str) -> str | None:
+    """Find the first Mesh prim under a given root path."""
+    root = stage.GetPrimAtPath(root_path)
+    if not root.IsValid():
+        return None
+    for p in Usd.PrimRange(root):
+        if p.GetTypeName() == "Mesh":
+            return p.GetPath().pathString
+    return None
+
 def store_deformable_properties(usd_file, youngs_modulus_pa, poissons_ratio, rigidity_type):
-    """Store deformable material properties as custom USD attributes."""
+    """Store deformable material properties as custom USD attributes (metadata only).
+
+    The PhysX deformable schema will be applied at runtime by Isaac Lab's
+    schemas.define_deformable_body_properties() function, which properly finds
+    the mesh prim and applies the schema with correct tetrahedral mesh generation.
+    """
     from pxr import Usd, Sdf
 
     stage = Usd.Stage.Open(usd_file)
@@ -46,12 +61,14 @@ def store_deformable_properties(usd_file, youngs_modulus_pa, poissons_ratio, rig
         logger.warning("No default prim found, using first prim")
         root_prim = stage.GetPrimAtPath(stage.GetPseudoRoot().GetChildren()[0].GetPath())
 
+    # Store metadata as custom attributes (read at runtime)
     root_prim.CreateAttribute("deformable:rigidityType", Sdf.ValueTypeNames.String).Set(rigidity_type)
     root_prim.CreateAttribute("deformable:youngsModulus", Sdf.ValueTypeNames.Double).Set(youngs_modulus_pa)
     root_prim.CreateAttribute("deformable:poissonsRatio", Sdf.ValueTypeNames.Double).Set(poissons_ratio)
 
     stage.Save()
-    logger.info(f"Stored deformable properties: E={youngs_modulus_pa/1e9:.4f} GPa, ν={poissons_ratio}")
+    logger.info(f"✓ Stored deformable metadata: E={youngs_modulus_pa/1e9:.4f} GPa, ν={poissons_ratio}")
+    logger.info(f"   (PhysX schema will be applied at runtime)")
 
 def process_convert_job(job_id, data, job_results):
     """
@@ -91,7 +108,10 @@ def process_convert_job(job_id, data, job_results):
         if rigidity_type == "rigid":
             collision_approx = "convexHull"
         elif rigidity_type == "deformable":
-            collision_approx = "meshSimplification"  # or "triangleMesh"
+            # For Flex deformables, skip collision during conversion
+            # Isaac Sim 5.0 Flex system will generate particle-based collision at runtime
+            # NOTE: The mesh should be watertight (repaired in coordinator before conversion)
+            collision_approx = "none"
         else:
             collision_approx = "none"
         
@@ -170,6 +190,7 @@ def process_create_base_scene_job(job_id, data, job_results, sim_context):
 def process_simulation_job(job_id, data, job_results, sim_context, camera_state):
     """Process physics simulation job."""
     try:
+        from pxr import Usd  # Import at function level to avoid UnboundLocalError
         start_time = time.time()
 
         # Extract parameters
@@ -193,22 +214,220 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             scene_builder.create_base_scene_usd(base_scene_path, sim_context)
         scene_builder.load_base_scene(base_scene_path, stage)
 
-        # Load object
+        # Load object temporarily to check rigidity type
         scene_builder.load_usdz_object(stage, usd_path, position=(0.0, 0.0, 0.5))
+        obj_prim = stage.GetPrimAtPath("/World/Objects/custom_obj")
+        rigidity_attr = obj_prim.GetAttribute("deformable:rigidityType")
+        rigidity_type = rigidity_attr.Get() if rigidity_attr else "rigid"
 
-        # Create rigid object
-        rigid_cfg = RigidObjectCfg(
-            prim_path="/World/Objects/custom_obj",
-            spawn=None,
-            init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(0.0, 0.0, 0.5),
-                rot=(1.0, 0.0, 0.0, 0.0)
+        # Get deformable parameters if present
+        youngs_modulus_attr = obj_prim.GetAttribute("deformable:youngsModulus")
+        poissons_ratio_attr = obj_prim.GetAttribute("deformable:poissonsRatio")
+        youngs_modulus = youngs_modulus_attr.Get() if youngs_modulus_attr else None
+        poissons_ratio = poissons_ratio_attr.Get() if poissons_ratio_attr else None
+
+        # Get bounding box from temp object
+        from pxr import UsdGeom, Gf
+        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default"])
+        bbox = bbox_cache.ComputeWorldBound(obj_prim)
+        bbox_range = bbox.ComputeAlignedRange()
+        size = bbox_range.GetSize()
+        bbox_min = bbox_range.GetMin()
+        bbox_max = bbox_range.GetMax()
+
+        # Phase B: Calculate spawn height with proper clearance
+        # Rule: 5cm minimum clearance OR 20% of largest dimension
+        clearance = max(0.05, 0.2 * max(size[0], size[1], size[2]))
+        # Spawn so the bottom of the object is at clearance height above ground (z=0)
+        # bbox_min[2] is the lowest point in current position, size[2] is height
+        spawn_z = size[2] / 2.0 + clearance
+
+        print(f"📏 Object bbox: min={[f'{x:.3f}' for x in bbox_min]}, max={[f'{x:.3f}' for x in bbox_max]}", flush=True)
+        print(f"📏 Object size: {size[0]:.2f}m x {size[1]:.2f}m x {size[2]:.2f}m", flush=True)
+        print(f"📍 Spawn height: {spawn_z:.3f}m (clearance: {clearance:.3f}m)", flush=True)
+        print(f"🔬 Rigidity type: {rigidity_type}", flush=True)
+
+        # Track the actual render prim path (may differ for deformables)
+        deformable_render_path = None
+
+        # Nuke stray spawner container if present (defensive)
+        if stage.GetPrimAtPath("/World/Objects/deformable_obj").IsValid():
+            stage.RemovePrim("/World/Objects/deformable_obj")
+
+        # Phase B: Reposition root Xform for BOTH rigid and deformable
+        # This ensures the visual and physics meshes are at the correct spawn position
+        print(f"🔧 Phase B: Positioning root Xform at spawn height...", flush=True)
+        xformable = UsdGeom.Xformable(obj_prim)
+        xformable.ClearXformOpOrder()
+        xformable.AddTranslateOp().Set((0.0, 0.0, spawn_z))
+        print(f"   ✓ Root Xform positioned at (0, 0, {spawn_z:.3f})", flush=True)
+
+        if rigidity_type == "deformable":
+            print("🧬 Setting up deformable (mesh-anchored)…", flush=True)
+            print(f"   Young's modulus: {youngs_modulus/1e9:.4f} GPa", flush=True)
+            print(f"   Poisson's ratio: {poissons_ratio}", flush=True)
+
+            # Find the actual mesh we imported under the loaded object
+            mesh_prim_path = _first_mesh_under(stage, "/World/Objects/custom_obj")
+            if not mesh_prim_path:
+                raise RuntimeError("No Mesh prim found under /World/Objects/custom_obj")
+
+            mesh_prim = stage.GetPrimAtPath(mesh_prim_path)
+            print(f"   🎯 Target mesh prim: {mesh_prim_path}", flush=True)
+
+            # Diagnostic: Check mesh geometry
+            mesh_geom = UsdGeom.Mesh(mesh_prim)
+            mesh_points = mesh_geom.GetPointsAttr().Get()
+            if mesh_points:
+                print(f"   📊 Mesh has {len(mesh_points)} vertices", flush=True)
+                mesh_points_array = np.array(mesh_points)
+                mesh_local_min = mesh_points_array.min(axis=0)
+                mesh_local_max = mesh_points_array.max(axis=0)
+                print(f"   📐 Mesh local bounds: min=[{mesh_local_min[0]:.3f}, {mesh_local_min[1]:.3f}, {mesh_local_min[2]:.3f}], max=[{mesh_local_max[0]:.3f}, {mesh_local_max[1]:.3f}, {mesh_local_max[2]:.3f}]", flush=True)
+            else:
+                print(f"   ⚠️  Warning: Mesh has no points!", flush=True)
+
+            # Clean ALL rigid body APIs that conflict with deformables (leftover from conversion)
+            # Deformables use a completely different physics system
+            apis_removed = []
+
+            # Collision APIs
+            if mesh_prim.HasAPI(UsdPhysics.CollisionAPI):
+                mesh_prim.RemoveAPI(UsdPhysics.CollisionAPI)
+                apis_removed.append("CollisionAPI")
+            if mesh_prim.HasAPI(UsdPhysics.MeshCollisionAPI):
+                mesh_prim.RemoveAPI(UsdPhysics.MeshCollisionAPI)
+                apis_removed.append("MeshCollisionAPI")
+            if mesh_prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+                mesh_prim.RemoveAPI(PhysxSchema.PhysxCollisionAPI)
+                apis_removed.append("PhysxCollisionAPI")
+
+            # Rigid body APIs (these MUST be removed for deformables)
+            if mesh_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                mesh_prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
+                apis_removed.append("RigidBodyAPI")
+            if mesh_prim.HasAPI(UsdPhysics.MassAPI):
+                mesh_prim.RemoveAPI(UsdPhysics.MassAPI)
+                apis_removed.append("MassAPI")
+
+            # Also check parent prim for rigid body artifacts
+            parent_prim = obj_prim
+            parent_apis_removed = []
+            if parent_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                parent_prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
+                parent_apis_removed.append("RigidBodyAPI")
+            if parent_prim.HasAPI(UsdPhysics.MassAPI):
+                parent_prim.RemoveAPI(UsdPhysics.MassAPI)
+                parent_apis_removed.append("MassAPI")
+            if parent_prim.HasAPI(UsdPhysics.CollisionAPI):
+                parent_prim.RemoveAPI(UsdPhysics.CollisionAPI)
+                parent_apis_removed.append("CollisionAPI")
+
+            if apis_removed:
+                print(f"   🧹 Removed mesh APIs: {', '.join(apis_removed)}", flush=True)
+            else:
+                print(f"   ✓ No stale mesh APIs found", flush=True)
+
+            if parent_apis_removed:
+                print(f"   🧹 Removed parent APIs: {', '.join(parent_apis_removed)}", flush=True)
+
+            # Create & bind deformable **material** using Isaac Lab's spawner
+            from isaaclab.sim.spawners.materials import DeformableBodyMaterialCfg
+            material_path = mesh_prim_path + "/DeformableMaterial"
+            deform_mat_cfg = DeformableBodyMaterialCfg(
+                youngs_modulus=youngs_modulus,
+                poissons_ratio=poissons_ratio,
+                dynamic_friction=0.4,
             )
-        )
-        rigid_obj = RigidObject(cfg=rigid_cfg)
+            deform_mat_cfg.func(material_path, deform_mat_cfg)
+            sim_utils.bind_physics_material(mesh_prim_path, material_path, stage=stage)
+            print("   🔗 Bound deformable material to mesh", flush=True)
+
+            # Apply the **body** API to the mesh
+            body_api = PhysxSchema.PhysxDeformableBodyAPI.Apply(mesh_prim)
+            print("   ✓ Applied PhysxDeformableBodyAPI", flush=True)
+
+            # NOTE: Deformables do NOT use UsdPhysics.CollisionAPI (that's for rigid bodies)
+            # Deformable collision is handled by the voxelization system via define_deformable_body_properties
+            # The PhysxDeformableBodyAPI creates its own collision representation from the tetrahedral mesh
+
+            # Define PhysX deformable properties via Isaac Lab helper (does voxelization/cooking)
+            from isaaclab.sim.schemas import schemas_cfg, schemas
+
+            # CRITICAL: Set kinematic enabled to False for dynamic deformables
+            # Collision simplification disabled to avoid cooking conflicts
+            deformable_cfg = schemas_cfg.DeformableBodyPropertiesCfg(
+                kinematic_enabled=False,  # Must be False for dynamic deformables
+                solver_position_iteration_count=20,  # Increased for stability
+                vertex_velocity_damping=0.01,  # Slightly higher damping
+                simulation_hexahedral_resolution=3,  # Lower resolution for robustness
+                collision_simplification=False,  # Disable to avoid mesh conflicts
+                self_collision=False,
+            )
+
+            print("   🔨 Starting deformable voxelization...", flush=True)
+            schemas.define_deformable_body_properties(mesh_prim_path, deformable_cfg, stage)
+            print("   ✅ Deformable voxelization complete (resolution: 3)", flush=True)
+
+            stage.Save()
+
+            # Instantiate the runtime wrapper **on the mesh** (no spawning!)
+            # NOTE: init_state is applied to the mesh, but the root Xform has already been positioned
+            deform_cfg = DeformableObjectCfg(
+                prim_path=mesh_prim_path,
+                spawn=None,
+                init_state=DeformableObjectCfg.InitialStateCfg(
+                    pos=(0.0, 0.0, 0.0),  # Relative to parent, which is already at spawn_z
+                    rot=(1.0, 0.0, 0.0, 0.0),
+                ),
+            )
+            physics_obj = DeformableObject(cfg=deform_cfg)
+            print("✅ Deformable object created (mesh-anchored)", flush=True)
+
+            # Track render path for camera
+            deformable_render_path = mesh_prim_path
+            print(f"   📹 Tracking mesh: {deformable_render_path}", flush=True)
+        else:
+            print(f"🪨 Creating rigid object...", flush=True)
+            # Create rigid object
+            rigid_cfg = RigidObjectCfg(
+                prim_path="/World/Objects/custom_obj",
+                spawn=None,
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(0.0, 0.0, spawn_z),
+                    rot=(1.0, 0.0, 0.0, 0.0)
+                )
+            )
+            physics_obj = RigidObject(cfg=rigid_cfg)
+            print(f"✅ Rigid object created", flush=True)
 
         # Reset simulation to initialize physics
         sim_context.reset()
+
+        # Get physics timestep
+        dt = sim_context.get_physics_dt()
+
+        # Diagnostic: Verify deformable initialization after reset
+        if rigidity_type == "deformable":
+            print("🔍 Verifying deformable initialization...", flush=True)
+            if hasattr(physics_obj.data, 'nodal_pos_w') and physics_obj.data.nodal_pos_w is not None:
+                nodal_pos = physics_obj.data.nodal_pos_w[0].cpu().numpy()
+                nodal_min = nodal_pos.min(axis=0)
+                nodal_max = nodal_pos.max(axis=0)
+                nodal_centroid = nodal_pos.mean(axis=0)
+                print(f"   📊 Nodal positions: {nodal_pos.shape[0]} nodes", flush=True)
+                print(f"   📐 Nodal bounds: min=[{nodal_min[0]:.3f}, {nodal_min[1]:.3f}, {nodal_min[2]:.3f}], max=[{nodal_max[0]:.3f}, {nodal_max[1]:.3f}, {nodal_max[2]:.3f}]", flush=True)
+                print(f"   📍 Nodal centroid: [{nodal_centroid[0]:.3f}, {nodal_centroid[1]:.3f}, {nodal_centroid[2]:.3f}]", flush=True)
+
+                # Check if object is above ground
+                if nodal_min[2] < -0.01:  # Allow 1cm tolerance
+                    print(f"   ⚠️  WARNING: Object is below ground! Lowest point: {nodal_min[2]:.3f}m", flush=True)
+                elif nodal_min[2] < clearance * 0.5:
+                    print(f"   ⚠️  WARNING: Object is very close to ground! Lowest point: {nodal_min[2]:.3f}m (expected >{clearance:.3f}m)", flush=True)
+                else:
+                    print(f"   ✓ Object is properly positioned above ground", flush=True)
+            else:
+                print(f"   ⚠️  WARNING: Nodal positions not available after reset!", flush=True)
 
         # Create/reset cameras
         if camera_state['camera'] is None:
@@ -216,10 +435,19 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         if camera_state['follow_camera'] is None:
             camera_state['follow_camera'] = create_follow_camera("/World/FollowCamera")
 
-        # Apply throwing velocity
-        dt = sim_context.get_physics_dt()
-        velocity_tensor = torch.tensor([[0.0, 13.0, 6.0, 0.0, 0.0, 0.0]], device=rigid_obj.device)
-        rigid_obj.write_root_velocity_to_sim(velocity_tensor)
+        # Apply throwing velocity (different for rigid vs deformable)
+
+        if rigidity_type == "deformable":
+            # For deformable objects, apply velocity to all nodal points
+            print(f"   Applying nodal velocity to deformable body...", flush=True)
+            # Deformable objects need per-node velocity, not root velocity
+            # For now, skip initial velocity for deformable - let gravity and contact forces handle it
+            # TODO: Implement proper nodal velocity application
+            print(f"   ⚠️  Note: Initial throwing velocity not implemented for deformable objects yet", flush=True)
+        else:
+            # For rigid objects, apply root velocity
+            velocity_tensor = torch.tensor([[0.0, 13.0, 6.0, 0.0, 0.0, 0.0]], device=physics_obj.device)
+            physics_obj.write_root_velocity_to_sim(velocity_tensor)
 
         # Force texture loading by touching all materials
         print(f"🎨 Pre-loading textures...", flush=True)
@@ -235,16 +463,17 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
                     _ = input.Get()
 
         # Warmup: Run simulation steps to let renderer stabilize
-        print(f"🔥 Warming up renderer (50 frames)...", flush=True)
-        for i in range(50):
-            rigid_obj.write_data_to_sim()
+        # NOTE: Warmup disabled to capture initial frames
+        print(f"🔥 Skipping warmup - capturing from frame 0...", flush=True)
+        for i in range(0):
+            physics_obj.write_data_to_sim()
             sim_context.step(render=True)
-            rigid_obj.update(dt)
+            physics_obj.update(dt)
             camera_state['camera'].update(dt)
             camera_state['follow_camera'].update(dt)
 
             if i % 10 == 0:
-                print(f"  Warmup frame {i}/50", flush=True)
+                print(f"  Warmup frame {i}/0", flush=True)
 
         # Run simulation and capture frames
         print(f"🎬 Running {video_length} simulation steps at {fps} FPS", flush=True)
@@ -253,12 +482,32 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
         for step in range(video_length):
             # Write data, step physics, update buffers (Isaac Lab pattern)
-            rigid_obj.write_data_to_sim()
-            sim_context.step(render=True)  # Must render to update camera textures!
-            rigid_obj.update(dt)
+            # Note: For deformable bodies, nodal positions are computed BY the simulation,
+            # not written TO it, so write_data_to_sim() may not be needed
+            if rigidity_type != "deformable":
+                physics_obj.write_data_to_sim()
 
-            # Update follow camera position
-            obj_pos = rigid_obj.data.root_state_w[0, :3].cpu().numpy()
+            sim_context.step(render=True)  # Must render to update camera textures and deformable visuals!
+            physics_obj.update(dt)
+
+            # Update follow camera position (different for rigid vs deformable)
+            if rigidity_type == "deformable":
+                # For deformable objects, get centroid of nodal positions
+                nodal_pos = physics_obj.data.nodal_pos_w[0].cpu().numpy()  # Shape: (num_nodes, 3)
+                obj_pos = nodal_pos.mean(axis=0)  # Centroid of all nodes
+
+                # Validate nodal positions are reasonable
+                if step == 0 or step % 50 == 0:
+                    nodal_min_z = nodal_pos[:, 2].min()
+                    nodal_max_z = nodal_pos[:, 2].max()
+                    print(f"  📍 Step {step}: centroid z={obj_pos[2]:.3f}m, z-range=[{nodal_min_z:.3f}, {nodal_max_z:.3f}]", flush=True)
+
+                    # Warning if object appears to be falling through floor
+                    if nodal_min_z < -0.05:
+                        print(f"  ⚠️  WARNING: Object is falling through floor! Min z={nodal_min_z:.3f}m", flush=True)
+            else:
+                obj_pos = physics_obj.data.root_state_w[0, :3].cpu().numpy()
+
             update_follow_camera_position(stage, obj_pos, camera_path="/World/FollowCamera")
 
             # Update cameras and capture frames
@@ -270,7 +519,6 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
             # Debug: Save first frame to check if textures are visible
             if step == 0:
-                import numpy as np
                 from PIL import Image as PILImage
                 debug_img = (frame_static.cpu().numpy() * 255).astype(np.uint8)
                 PILImage.fromarray(debug_img).save(f"{out_dir}/debug_frame0_{request_job_id}.png")
@@ -279,6 +527,11 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
             frames_static.append(frame_static)
             frames_follow.append(frame_follow)
+
+        # Log final position
+        if rigidity_type == "deformable":
+            final_pos = physics_obj.data.nodal_pos_w[0].cpu().numpy().mean(axis=0)
+            print(f"  🏁 Final z-position: {final_pos[2]:.3f}m (started at {spawn_z:.3f}m)", flush=True)
 
         # Encode videos
         frames_static_numpy, _ = convert_frames_to_uint8(frames_static)

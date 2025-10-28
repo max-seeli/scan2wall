@@ -627,9 +627,102 @@ def generate_mesh_via_comfyui(image_path: str, job_id: str) -> str:
     raise TimeoutError(f"ComfyUI mesh generation timed out after {max_wait}s")
 
 
+def repair_mesh_for_deformable(glb_path: Path) -> Path:
+    """
+    Repair mesh to make it watertight for deformable body simulation.
+
+    PhysX requires closed meshes for voxelization. This function:
+    - Fills holes
+    - Removes degenerate faces
+    - Fixes normals
+
+    Returns path to repaired mesh (in-place modification).
+    """
+    import trimesh
+    import numpy as np
+
+    print(f"  🔧 Repairing mesh for deformable simulation: {glb_path.name}")
+
+    # Load mesh
+    mesh = trimesh.load(str(glb_path), force='mesh')
+
+    # Get initial stats
+    initial_verts = len(mesh.vertices)
+    initial_faces = len(mesh.faces)
+    initial_watertight = mesh.is_watertight
+
+    print(f"     Initial: {initial_verts} verts, {initial_faces} faces, watertight={initial_watertight}")
+
+    # Step 1: Remove degenerate faces
+    mesh.remove_degenerate_faces()
+
+    # Step 2: Remove duplicate vertices
+    mesh.merge_vertices()
+
+    # Step 3: Fill holes
+    mesh.fill_holes()
+
+    # Step 4: Fix normals
+    mesh.fix_normals()
+
+    # Step 5: Check for multiple disconnected components (PhysX can't handle this)
+    components = mesh.split(only_watertight=False)
+    if len(components) > 1:
+        print(f"     ⚠️  Mesh has {len(components)} disconnected components")
+        # Keep only the largest component
+        largest = max(components, key=lambda m: len(m.vertices))
+        mesh = largest
+        print(f"     → Keeping largest component ({len(mesh.vertices)} verts)")
+
+    # Step 6: Try to make watertight if still not (aggressive fill_holes)
+    if not mesh.is_watertight:
+        print(f"     ⚠️  Mesh still not watertight, attempting aggressive hole filling...")
+        # Try multiple fill passes
+        for i in range(3):
+            mesh.fill_holes()
+            if mesh.is_watertight:
+                print(f"     ✓ Watertight after {i+1} fill pass(es)")
+                break
+
+        # If STILL not watertight, ONLY THEN use convex hull
+        if not mesh.is_watertight:
+            print(f"     ⚠️  Aggressive hole filling failed, using convex hull as last resort")
+            mesh = mesh.convex_hull
+
+    # Get final stats
+    final_verts = len(mesh.vertices)
+    final_faces = len(mesh.faces)
+    final_watertight = mesh.is_watertight
+    final_components = len(mesh.split(only_watertight=False))
+
+    print(f"     Final: {final_verts} verts, {final_faces} faces, watertight={final_watertight}, components={final_components}")
+
+    if not final_watertight:
+        print(f"     ✗ WARNING: Could not make mesh watertight! Deformable simulation may fail.")
+    else:
+        print(f"     ✓ Mesh is now watertight")
+
+    # Save repaired mesh (overwrite original)
+    mesh.export(str(glb_path))
+
+    return glb_path
+
+
 def convert_mesh(glb_file: Path, json_file: Path, output_dir=None) -> str:
     """Convert GLB to USDZ via Isaac worker."""
+    import json
+
     usd_dir = output_dir if output_dir else glb_file.parent
+
+    # Check if this is a deformable object that needs mesh repair
+    if json_file.exists():
+        with open(json_file, 'r') as f:
+            properties = json.load(f)
+            rigidity_type = properties.get('rigidity', {}).get('type', 'rigid')
+
+            if rigidity_type == "deformable":
+                print(f"  Deformable object detected - repairing mesh...")
+                glb_file = repair_mesh_for_deformable(glb_file)
 
     payload = {
         "glb_path": to_container(glb_file),

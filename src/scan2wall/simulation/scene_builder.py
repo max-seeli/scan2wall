@@ -129,40 +129,46 @@ def load_usdz_object(stage: Usd.Stage, usd_path: str, position: tuple = (0.0, 0.
     """
     print(f"📦 Loading object: {os.path.basename(usd_path)}", flush=True)
 
-    # Extract USDZ to temp folder for direct texture access
-    import zipfile
-    import tempfile
+    # Check if it's a USDZ (zip) or plain USD
+    if usd_path.endswith('.usdz'):
+        # Extract USDZ to temp folder for direct texture access
+        import zipfile
+        import tempfile
 
-    extract_dir = tempfile.mkdtemp(prefix="usdz_")
-    print(f"  Extracting USDZ to: {extract_dir}", flush=True)
+        extract_dir = tempfile.mkdtemp(prefix="usdz_")
+        print(f"  Extracting USDZ to: {extract_dir}", flush=True)
 
-    with zipfile.ZipFile(usd_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_dir)
+        with zipfile.ZipFile(usd_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
 
-    # List extracted contents
-    extracted_files = []
-    for root, dirs, files in os.walk(extract_dir):
-        for file in files:
-            full_path = os.path.join(root, file)
-            rel_path = os.path.relpath(full_path, extract_dir)
-            extracted_files.append(rel_path)
-            if file.endswith('.png') or file.endswith('.jpg'):
-                file_size = os.path.getsize(full_path)
-                print(f"    📷 Texture: {rel_path} ({file_size} bytes)", flush=True)
+        # List extracted contents
+        extracted_files = []
+        for root, dirs, files in os.walk(extract_dir):
+            for file in files:
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, extract_dir)
+                extracted_files.append(rel_path)
+                if file.endswith('.png') or file.endswith('.jpg'):
+                    file_size = os.path.getsize(full_path)
+                    print(f"    📷 Texture: {rel_path} ({file_size} bytes)", flush=True)
 
-    print(f"  Extracted {len(extracted_files)} file(s)", flush=True)
+        print(f"  Extracted {len(extracted_files)} file(s)", flush=True)
 
-    # Find the USD file in extracted content
-    usd_file = None
-    for file in os.listdir(extract_dir):
-        if file.endswith('.usd') or file.endswith('.usda') or file.endswith('.usdc'):
-            usd_file = os.path.join(extract_dir, file)
-            break
+        # Find the USD file in extracted content
+        usd_file = None
+        for file in os.listdir(extract_dir):
+            if file.endswith('.usd') or file.endswith('.usda') or file.endswith('.usdc'):
+                usd_file = os.path.join(extract_dir, file)
+                break
 
-    if not usd_file:
-        raise RuntimeError(f"No USD file found in USDZ archive: {usd_path}")
+        if not usd_file:
+            raise RuntimeError(f"No USD file found in USDZ archive: {usd_path}")
 
-    print(f"  Loading USD file: {os.path.basename(usd_file)}", flush=True)
+        print(f"  Loading USD file: {os.path.basename(usd_file)}", flush=True)
+    else:
+        # Plain USD file - use it directly
+        print(f"  Loading USD file directly (not a USDZ): {os.path.basename(usd_path)}", flush=True)
+        usd_file = usd_path
 
     # Fix texture paths: Convert USDZ archive paths to absolute file paths
     from pxr import Sdf, UsdShade
@@ -306,13 +312,13 @@ def cleanup_old_objects(stage: Usd.Stage, base_scene_path: str = None) -> None:
 
 
 def _create_ground_plane(stage: Usd.Stage) -> None:
-    """Create textured ground plane with physics."""
+    """Create textured ground plane with physics (compatible with deformables)."""
+    from pxr import UsdPhysics, PhysxSchema
+
+    # Use default GroundPlaneCfg for deformable compatibility
+    # Custom physics materials can interfere with deformable-rigid collisions
     cfg_ground = sim_utils.GroundPlaneCfg(
-        color=(0.35, 0.35, 0.35),
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            static_friction=0.7,
-            dynamic_friction=0.6
-        )
+        color=(0.35, 0.35, 0.35)
     )
     cfg_ground.visual_material = sim_utils.PreviewSurfaceCfg(
         diffuse_color=(0.35, 0.35, 0.35),
@@ -320,6 +326,41 @@ def _create_ground_plane(stage: Usd.Stage) -> None:
         metallic=0.0
     )
     cfg_ground.func("/World/defaultGroundPlane", cfg_ground)
+
+    # Phase A: Ensure ground has proper collision setup for deformables
+    ground_prim = stage.GetPrimAtPath("/World/defaultGroundPlane")
+    if ground_prim.IsValid():
+        print("🔧 Phase A: Configuring ground for deformable compatibility...", flush=True)
+
+        # Ensure collision API is applied
+        if not ground_prim.HasAPI(UsdPhysics.CollisionAPI):
+            UsdPhysics.CollisionAPI.Apply(ground_prim)
+            print("   ✓ Applied CollisionAPI to ground", flush=True)
+
+        # Add PhysX-specific collision tuning for deformables
+        if not ground_prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+            physx_coll = PhysxSchema.PhysxCollisionAPI.Apply(ground_prim)
+            # Contact offset: distance at which contacts are detected (1-2% of typical object size)
+            physx_coll.CreateContactOffsetAttr().Set(0.01)  # 1cm contact detection distance
+            # Rest offset: minimum separation distance (typically 0 for stable ground)
+            physx_coll.CreateRestOffsetAttr().Set(0.0)
+            print("   ✓ Applied PhysxCollisionAPI with contact/rest offsets", flush=True)
+
+        # Create and bind physics material with proper friction
+        mat_path = "/World/PhysicsMaterials/GroundMaterial"
+        mat_prim = stage.GetPrimAtPath(mat_path)
+        if not mat_prim.IsValid():
+            mat_prim = stage.DefinePrim(mat_path, "Material")
+            phys_mat = UsdPhysics.MaterialAPI.Apply(mat_prim)
+            phys_mat.CreateStaticFrictionAttr().Set(0.6)
+            phys_mat.CreateDynamicFrictionAttr().Set(0.5)
+            phys_mat.CreateRestitutionAttr().Set(0.0)
+            print("   ✓ Created ground physics material (friction=0.6/0.5, restitution=0)", flush=True)
+
+        # Bind material to ground
+        sim_utils.bind_physics_material("/World/defaultGroundPlane", mat_path, stage=stage)
+        print("   ✓ Bound physics material to ground", flush=True)
+        print("✅ Phase A complete: Ground ready for deformables", flush=True)
 
 
 def _create_lighting(stage: Usd.Stage) -> None:
