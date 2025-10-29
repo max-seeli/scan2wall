@@ -526,8 +526,8 @@ def build_wall(
         offset = (brick_spacing_x / 2) if row % 2 == 1 else 0
 
         for col in range(width):
-            # Skip edge bricks on top row (they're unstable)
-            if row == height - 1 and (col == 0 or col == width - 1):
+            # Skip rightmost brick on top row (unstable edge brick)
+            if row == height - 1 and col == width - 1:
                 continue
 
             x = x0 - 0.5 * (width - 1) * brick_spacing_x + col * brick_spacing_x + offset
