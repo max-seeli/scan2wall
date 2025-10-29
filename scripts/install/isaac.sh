@@ -38,6 +38,169 @@ echo ""
 mkdir -p "$ISAAC_DIR"
 
 # ============================================================================
+# Auto-Installation Functions
+# ============================================================================
+
+install_docker() {
+    echo ""
+    echo "=========================================="
+    echo "Docker Installation"
+    echo "=========================================="
+    echo ""
+    echo -e "${YELLOW}Docker is not installed. Installing Docker automatically...${NC}"
+    echo ""
+
+    # Download and run Docker installation script
+    echo "Downloading Docker installation script..."
+    if ! curl -fsSL https://get.docker.com -o /tmp/get-docker.sh; then
+        echo -e "${RED}✗ Failed to download Docker installation script${NC}"
+        echo ""
+        echo "Please install Docker manually:"
+        echo "  curl -fsSL https://get.docker.com | sh"
+        echo "  sudo usermod -aG docker \$USER"
+        echo "  newgrp docker"
+        exit 1
+    fi
+
+    echo "Running Docker installation script (requires sudo)..."
+    if ! sudo sh /tmp/get-docker.sh; then
+        echo -e "${RED}✗ Docker installation failed${NC}"
+        echo ""
+        echo "Please install Docker manually:"
+        echo "  curl -fsSL https://get.docker.com | sh"
+        echo "  sudo usermod -aG docker \$USER"
+        echo "  newgrp docker"
+        exit 1
+    fi
+
+    # Clean up installation script
+    rm -f /tmp/get-docker.sh
+
+    # Add current user to docker group
+    echo "Adding user to docker group..."
+    sudo usermod -aG docker "$USER"
+
+    # Activate docker group for current shell
+    echo "Activating docker group..."
+    # Restart docker service to ensure it's running with updated configuration
+    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null
+
+    # Wait for Docker to be ready
+    sleep 3
+
+    # Verify installation
+    echo ""
+    echo "Verifying Docker installation..."
+    if command -v docker &> /dev/null; then
+        # Test Docker without sudo by checking if we can run docker commands
+        if docker ps &> /dev/null; then
+            echo -e "${GREEN}✓${NC} Docker installed successfully: $(docker --version)"
+            echo ""
+            return 0
+        else
+            echo -e "${YELLOW}⚠${NC} Docker installed but current shell doesn't have docker group access"
+            echo ""
+            echo -e "${YELLOW}IMPORTANT: You need to activate the docker group for this shell session.${NC}"
+            echo ""
+            echo "Please run ONE of the following:"
+            echo "  1. Activate docker group in current shell: ${GREEN}exec sg docker -c \"$0 \$*\"${NC}"
+            echo "  2. Or exit this script and run: ${GREEN}newgrp docker${NC}, then re-run setup"
+            echo "  3. Or log out and log back in, then re-run setup"
+            echo ""
+            echo "Press Enter to exit this script..."
+            read
+            exit 1
+        fi
+    else
+        echo -e "${RED}✗ Docker installation verification failed${NC}"
+        exit 1
+    fi
+}
+
+install_nvidia_container_toolkit() {
+    echo ""
+    echo "=========================================="
+    echo "NVIDIA Container Toolkit Installation"
+    echo "=========================================="
+    echo ""
+    echo -e "${YELLOW}NVIDIA Container Toolkit is not installed. Installing automatically...${NC}"
+    echo ""
+
+    # Add NVIDIA Container Toolkit repository
+    echo "Adding NVIDIA Container Toolkit repository (requires sudo)..."
+
+    # Configure the repository
+    if ! curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg; then
+        echo -e "${RED}✗ Failed to add NVIDIA GPG key${NC}"
+        echo ""
+        echo "Please install NVIDIA Container Toolkit manually:"
+        echo "  Visit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+        exit 1
+    fi
+
+    if ! curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null; then
+        echo -e "${RED}✗ Failed to add NVIDIA Container Toolkit repository${NC}"
+        echo ""
+        echo "Please install NVIDIA Container Toolkit manually:"
+        echo "  Visit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+        exit 1
+    fi
+
+    # Update apt cache
+    echo "Updating package list..."
+    if ! sudo apt-get update -qq; then
+        echo -e "${YELLOW}⚠${NC} apt-get update had warnings, continuing anyway..."
+    fi
+
+    # Install nvidia-container-toolkit
+    echo "Installing nvidia-container-toolkit..."
+    if ! sudo apt-get install -y nvidia-container-toolkit; then
+        echo -e "${RED}✗ Failed to install nvidia-container-toolkit${NC}"
+        echo ""
+        echo "Please install NVIDIA Container Toolkit manually:"
+        echo "  sudo apt-get update"
+        echo "  sudo apt-get install -y nvidia-container-toolkit"
+        echo "  sudo systemctl restart docker"
+        exit 1
+    fi
+
+    # Configure Docker to use NVIDIA runtime
+    echo "Configuring Docker to use NVIDIA runtime..."
+    sudo nvidia-ctk runtime configure --runtime=docker
+
+    # Restart Docker
+    echo "Restarting Docker service..."
+    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null
+
+    # Wait for Docker to be ready (longer wait for NVIDIA runtime to initialize)
+    echo "Waiting for Docker and NVIDIA runtime to initialize (30 seconds)..."
+    sleep 30
+
+    # Verify installation
+    echo ""
+    echo "Verifying NVIDIA Container Toolkit installation..."
+    echo "Running CUDA test container (this may take a minute on first run)..."
+    if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+        echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit installed and configured successfully"
+        echo ""
+        return 0
+    else
+        echo -e "${RED}✗ NVIDIA Container Toolkit verification failed${NC}"
+        echo ""
+        echo "The toolkit was installed but the CUDA test failed."
+        echo "This may indicate an issue with your NVIDIA drivers or Docker configuration."
+        echo ""
+        echo "Try these troubleshooting steps:"
+        echo "  1. Verify NVIDIA drivers: nvidia-smi"
+        echo "  2. Check Docker service: sudo systemctl status docker"
+        echo "  3. Test manually: docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi"
+        exit 1
+    fi
+}
+
+# ============================================================================
 # Prerequisites Check
 # ============================================================================
 
@@ -61,27 +224,38 @@ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | 
 
 # Check for Docker
 if ! command -v docker &> /dev/null; then
-    echo -e "${RED}✗ Error: Docker not found${NC}"
-    echo ""
-    echo "Please install Docker:"
-    echo "  curl -fsSL https://get.docker.com | sh"
-    echo "  sudo usermod -aG docker \$USER"
-    echo "  newgrp docker"
-    exit 1
+    echo -e "${YELLOW}⚠${NC} Docker not found"
+    install_docker
+else
+    echo -e "${GREEN}✓${NC} Docker installed: $(docker --version)"
 fi
-echo -e "${GREEN}✓${NC} Docker installed: $(docker --version)"
 
 # Check for nvidia-container-toolkit
-if ! docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-    echo -e "${RED}✗ Error: NVIDIA Container Toolkit not properly configured${NC}"
-    echo ""
-    echo "Please install NVIDIA Container Toolkit:"
-    echo "  sudo apt-get update"
-    echo "  sudo apt-get install -y nvidia-container-toolkit"
-    echo "  sudo systemctl restart docker"
-    exit 1
+echo "Testing NVIDIA Container Toolkit..."
+
+# First check if the package is installed
+if dpkg -l | grep -q nvidia-container-toolkit && [ -f /etc/docker/daemon.json ] && grep -q "nvidia" /etc/docker/daemon.json; then
+    echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit package installed"
+
+    # Quick test to verify it's working
+    echo "Verifying GPU access in Docker..."
+    if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+        echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit configured and working"
+    else
+        echo -e "${YELLOW}⚠${NC} Toolkit installed but test failed - this may be temporary"
+        echo "Waiting 5 seconds and retrying..."
+        sleep 5
+        if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+            echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit working after retry"
+        else
+            echo -e "${YELLOW}⚠${NC} Test still failing, but toolkit is installed. Continuing..."
+            echo "You can verify manually later with: docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi"
+        fi
+    fi
+else
+    echo -e "${YELLOW}⚠${NC} NVIDIA Container Toolkit not installed"
+    install_nvidia_container_toolkit
 fi
-echo -e "${GREEN}✓${NC} NVIDIA Container Toolkit configured"
 
 # Check disk space (need at least 50GB for Docker images)
 AVAILABLE_SPACE=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | sed 's/G//')

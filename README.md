@@ -28,9 +28,11 @@
 
 ### Prerequisites
 
-- **Linux** with NVIDIA GPU
+- **Linux** with NVIDIA GPU (with drivers installed)
 - **70GB+ free disk space** for models and Isaac Lab
 - **24GB+ of VRAM** for ComfyUI with MeshCraft
+
+**Note**: Docker and nvidia-container-toolkit will be automatically installed during setup if not present.
 
 ### Installation
 
@@ -40,11 +42,18 @@ git clone https://github.com/max-seeli/scan2wall.git
 cd scan2wall
 ./scripts/setup.sh
 ```
-You will be asked for a Gemini API Key during setup!
-You can also skip adding it during setup and add it later;
+The setup script will automatically:
+- Install Docker (if not already installed)
+- Install NVIDIA Container Toolkit (if not already installed)
+- Download and configure Isaac Lab (~10-15GB Docker images)
+- Set up ComfyUI with required custom nodes
+- Download AI models (~8GB)
 
-Edit `.env` and add your Gemini API key:
-- **Required**: `GOOGLE_API_KEY` - Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
+**API Key Setup:**
+You will be prompted for a Gemini API key during setup. You can also skip it and add it later by editing `.env`:
+```bash
+GOOGLE_API_KEY=your_key_here  # Get from https://makersuite.google.com/app/apikey
+```
 
 ### Running
 
