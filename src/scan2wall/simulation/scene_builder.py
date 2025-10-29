@@ -45,8 +45,8 @@ def create_base_scene_usd(output_path: str = "/workspace/s2w-scripts/scenes/thro
         physx_scene.CreateSolverPositionIterationCountAttr().Set(20)
         physx_scene.CreateSolverVelocityIterationCountAttr().Set(8)
 
-        # Bounce threshold (prevent micro-bounces in stacks - objects <0.1 m/s don't bounce)
-        physx_scene.CreateBounceThresholdAttr().Set(0.1)
+        # Bounce threshold (allow bouncing at lower velocities to prevent sticking)
+        physx_scene.CreateBounceThresholdAttr().Set(0.05)
 
         # Friction correlation distance (improve contact stability - 20mm)
         physx_scene.CreateFrictionCorrelationDistanceAttr().Set(0.02)
@@ -72,14 +72,16 @@ def create_base_scene_usd(output_path: str = "/workspace/s2w-scripts/scenes/thro
     # Build wall structure
     build_wall(
         "/World/StaticObjects/Wall",
-        width=8,   # Fewer bricks (was 15)
-        height=10,  # 10 bricks = 3.0m tall (doubled from 5)
-        brick_width=0.6,   # 2x bigger (was 0.3)
-        brick_height=0.3,  # 2x bigger (was 0.15)
-        brick_depth=0.3,   # 2x bigger (was 0.15)
+        width=15,  # Realistic brick count
+        height=12,  # 12 bricks = 1.8m tall
+        brick_width=0.3,   # Realistic brick size
+        brick_height=0.15,  # Realistic brick size
+        brick_depth=0.15,   # Realistic brick size
         gap=0.0,
-        base_xy=(0.0, 10.0),  # Shifted left by 0.15m (half brick) so object hits brick center
-        z0=0.151  # 150mm center + 1mm clearance from ground (adjusted for bigger bricks)
+        base_xy=(0.0, 10.0),  # Wall position
+        z0=0.076,  # 75mm center + 1mm clearance from ground
+        stage=stage,
+        texture_path="/workspace/s2w-data/textures/brick_with_gap.png"
     )
 
     # Ensure output directory exists
@@ -130,14 +132,16 @@ def build_scene_from_scratch(stage: Usd.Stage) -> None:
     # Build wall
     build_wall(
         "/World/StaticObjects/Wall",
-        width=8,   # Fewer bricks (was 15)
-        height=10,  # 10 bricks = 3.0m tall (doubled from 5)
-        brick_width=0.6,   # 2x bigger (was 0.3)
-        brick_height=0.3,  # 2x bigger (was 0.15)
-        brick_depth=0.3,   # 2x bigger (was 0.15)
+        width=15,  # Realistic brick count
+        height=12,  # 12 bricks = 1.8m tall
+        brick_width=0.3,   # Realistic brick size
+        brick_height=0.15,  # Realistic brick size
+        brick_depth=0.15,   # Realistic brick size
         gap=0.0,
-        base_xy=(0.0, 10.0),  # Shifted left by 0.15m (half brick) so object hits brick center
-        z0=0.151  # 150mm center + 1mm clearance from ground (adjusted for bigger bricks)
+        base_xy=(0.0, 10.0),  # Wall position
+        z0=0.076,  # 75mm center + 1mm clearance from ground
+        stage=stage,
+        texture_path="/workspace/s2w-data/textures/brick_with_gap.png"
     )
 
 
@@ -459,6 +463,84 @@ def build_pyramid(parent: str, levels: int = 6, cube_size=0.15, gap=0.02, base_x
             cfg_cube.func(f"{parent}/cube_{lvl}_{j}", cfg_cube, translation=(x, y, z))
 
 
+def _enable_brick_ccd(stage: Usd.Stage, brick_prim_path: str):
+    """
+    Enable CCD (Continuous Collision Detection) on a brick.
+
+    Args:
+        stage: USD stage
+        brick_prim_path: Path to brick prim
+    """
+    from pxr import PhysxSchema
+
+    brick_prim = stage.GetPrimAtPath(brick_prim_path)
+    if not brick_prim.IsValid():
+        return
+
+    # Enable CCD on brick's rigid body
+    if not brick_prim.HasAPI(PhysxSchema.PhysxRigidBodyAPI):
+        physx_rb = PhysxSchema.PhysxRigidBodyAPI.Apply(brick_prim)
+    else:
+        physx_rb = PhysxSchema.PhysxRigidBodyAPI(brick_prim)
+
+    physx_rb.CreateEnableCCDAttr().Set(True)
+
+
+def _apply_brick_texture(stage: Usd.Stage, brick_prim_path: str, texture_path: str):
+    """
+    Apply textured material with visual mortar gaps to a brick.
+
+    Args:
+        stage: USD stage
+        brick_prim_path: Path to brick prim
+        texture_path: Absolute path to texture file
+    """
+    from pxr import UsdShade, Sdf
+
+    brick_prim = stage.GetPrimAtPath(brick_prim_path)
+    if not brick_prim.IsValid():
+        return
+
+    # Create material
+    mat_path = Sdf.Path(f"{brick_prim_path}/BrickMaterial")
+    material = UsdShade.Material.Define(stage, mat_path)
+
+    # Create UsdPreviewSurface shader
+    shader_path = mat_path.AppendChild("PreviewSurface")
+    shader = UsdShade.Shader.Define(stage, shader_path)
+    shader.CreateIdAttr("UsdPreviewSurface")
+
+    # UV reader
+    uv_path = mat_path.AppendChild("Primvar_st")
+    uv_shader = UsdShade.Shader.Define(stage, uv_path)
+    uv_shader.CreateIdAttr("UsdPrimvarReader_float2")
+    uv_shader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+
+    # Texture reader
+    tex_path = mat_path.AppendChild("BrickTexture")
+    tex_shader = UsdShade.Shader.Define(stage, tex_path)
+    tex_shader.CreateIdAttr("UsdUVTexture")
+    tex_shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(texture_path)
+    tex_shader.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+    tex_shader.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
+        uv_shader.ConnectableAPI(), "result"
+    )
+
+    # Connect texture to shader
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(
+        tex_shader.ConnectableAPI(), "rgb"
+    )
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.8)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+
+    # Connect shader to material
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+
+    # Bind material to brick mesh
+    mesh_binding = UsdShade.MaterialBindingAPI.Apply(brick_prim)
+    mesh_binding.Bind(material)
+
+
 def build_wall(
     parent: str,
     width: int = 15,
@@ -468,7 +550,9 @@ def build_wall(
     brick_depth=0.15,
     gap=0.01,
     base_xy=(0.0, 10.0),
-    z0=0.075
+    z0=0.075,
+    stage: Usd.Stage = None,
+    texture_path: str = None
 ):
     """
     Build a brick wall structure.
@@ -497,15 +581,15 @@ def build_wall(
     cfg_brick = sim_utils.CuboidCfg(
         size=(brick_width, brick_depth, brick_height),  # 100% size - no gaps!
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            solver_position_iteration_count=64,  # Very high for robust collision handling
-            solver_velocity_iteration_count=16,  # Very high for contact resolution
+            solver_position_iteration_count=32,  # Reduced for lighter 7kg bricks (still robust)
+            solver_velocity_iteration_count=8,   # Reduced for lighter bricks
             stabilization_threshold=0.0001,      # Very low threshold for maximum stability
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(
             contact_offset=0.005,  # 5mm contact detection
-            rest_offset=0.0        # No interpenetration at spawn
+            rest_offset=0.001      # 1mm separation to prevent spawn overlaps
         ),
-        mass_props=sim_utils.MassPropertiesCfg(mass=56.0),  # 56kg bricks (8x heavier for 8x volume: 7kg * 8)
+        mass_props=sim_utils.MassPropertiesCfg(mass=7.0),  # 7kg realistic concrete brick
         physics_material=brick_physics_material,
         visual_material=sim_utils.PreviewSurfaceCfg(
             diffuse_color=(0.7, 0.3, 0.2),  # Reddish-brown
@@ -514,9 +598,9 @@ def build_wall(
     )
 
     x0, y0 = base_xy
-    # 0.5mm gaps to prevent bricks locking together
-    gap_x = 0.0005  # 0.5mm horizontal gap
-    gap_z = 0.0005  # 0.5mm vertical gap
+    # No physical gaps - bricks touching (visual gaps via texture)
+    gap_x = 0.0  # No horizontal gap
+    gap_z = 0.0  # No vertical gap
 
     brick_spacing_x = brick_width + gap_x
     brick_spacing_z = brick_height + gap_z
@@ -534,4 +618,13 @@ def build_wall(
             y = y0
             z = z0 + row * brick_spacing_z
 
-            cfg_brick.func(f"{parent}/brick_{row}_{col}", cfg_brick, translation=(x, y, z))
+            brick_path = f"{parent}/brick_{row}_{col}"
+            cfg_brick.func(brick_path, cfg_brick, translation=(x, y, z))
+
+            # Enable CCD on brick (critical for preventing tunneling)
+            if stage is not None:
+                _enable_brick_ccd(stage, brick_path)
+
+            # Apply texture if provided
+            if stage is not None and texture_path is not None:
+                _apply_brick_texture(stage, brick_path, texture_path)

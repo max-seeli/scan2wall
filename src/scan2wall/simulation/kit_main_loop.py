@@ -289,10 +289,10 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
         # Pre-settle phase: Let wall stabilize before spawning object (PhysX best practice)
         # This allows contacts to stabilize and friction cones to align
-        print(f"🧱 Pre-settling wall (150 steps)...", flush=True)
+        print(f"🧱 Pre-settling wall (300 steps)...", flush=True)
         sim_context.reset()  # This initializes the RigidObject
         dt = sim_context.get_physics_dt()
-        settle_steps = 150  # 1.5 seconds at 100Hz physics timestep
+        settle_steps = 300  # 3.0 seconds at 100Hz physics timestep (increased for realistic brick mass)
         for step in range(settle_steps):
             sim_context.step(render=False)
         print(f"✅ Wall pre-settled", flush=True)
@@ -391,6 +391,36 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             physics_obj = RigidObject(cfg=rigid_cfg)
             print(f"✅ Rigid object created", flush=True)
 
+            # Set collision offsets to prevent wall penetration
+            print(f"🔧 Setting collision offsets to prevent wall penetration...", flush=True)
+            obj_prim = stage.GetPrimAtPath("/World/Objects/custom_obj")
+
+            # Calculate size-based contact offset (no velocity scaling)
+            # CCD prevents tunneling, so we can use smaller, more stable values
+            obj_size_max = max(size)  # Largest dimension
+
+            # Formula: min(10mm max, 2% of object size)
+            # Small offsets prevent force amplification and wall explosions
+            size_based = 0.02 * obj_size_max  # 2% of object size
+            contact_offset = min(0.01, size_based)  # Cap at 10mm for stability
+            rest_offset = 0.002  # 2mm separation
+
+            print(f"   Contact offset: {contact_offset*1000:.1f}mm (size-based: {size_based*1000:.1f}mm, capped at 10mm)", flush=True)
+            print(f"   Rest offset: {rest_offset*1000:.1f}mm", flush=True)
+            print(f"   CCD enabled for tunneling prevention", flush=True)
+
+            for prim in Usd.PrimRange(obj_prim):
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    if not prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+                        physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+                    else:
+                        physx_collision = PhysxSchema.PhysxCollisionAPI(prim)
+
+                    physx_collision.CreateContactOffsetAttr().Set(contact_offset)
+                    physx_collision.CreateRestOffsetAttr().Set(rest_offset)
+
+            print(f"✅ Collision offsets applied", flush=True)
+
         # --- Initialize follow camera to see object immediately ---
         initial_camera_pos = np.array([0.0, 0.0, spawn_z])
         update_follow_camera_position(stage, initial_camera_pos, camera_path="/World/FollowCamera", obj_size=max(size))
@@ -480,7 +510,7 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
         # PHASE 4: Apply throwing velocity and start recording immediately
         print(f"🎯 Applying throwing velocity and starting recording...", flush=True)
-        velocity_tensor = torch.tensor([[0.0, 18.2, 6.48, 0.0, 0.0, 2.0]], device=physics_obj.device)
+        velocity_tensor = torch.tensor([[-0.55, 18.2, 5.83, 0.0, 0.0, 2.0]], device=physics_obj.device)
         physics_obj.write_root_velocity_to_sim(velocity_tensor)
         physics_obj.write_data_to_sim()
 
