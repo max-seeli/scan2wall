@@ -189,6 +189,7 @@ async def get_job_status(request: Request, job_id: str):
         "queue_position": queue_info["queue_position"],
         "queue_total": queue_info["queue_total"],
         "estimated_wait_seconds": queue_info["estimated_wait_seconds"],
+        "destruction_score": job.get("destruction_score", None),
         "assets": {
             "nobackground_ready": nobackground_ready,
             "decoded_ready": decoded_ready,
