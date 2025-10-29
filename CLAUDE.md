@@ -38,11 +38,18 @@ source .venv/bin/activate
 python -m scan2wall.server.run  # Runs on port 49100
 ```
 
+**Terminal 3 - Cloudflare Tunnel (optional, for public access):**
+```bash
+cloudflared tunnel run scan2wall  # Exposes localhost:49100 to custom domain
+```
+
 **Isaac Worker** (runs automatically in Docker container):
 - Persistent HTTP server on port 8090 inside `vscode` container (uses Python's http.server)
 - Started automatically by `scripts/start.sh`
 - Handles mesh conversion and simulation requests
 - Logs: `data/logs/isaac_worker.log`
+
+**Note:** `./scripts/start.sh` auto-starts Cloudflare Tunnel if configured (checks for `~/.cloudflared/config.yml`)
 
 ### Testing and Development
 
@@ -271,6 +278,49 @@ All paths support environment variable overrides via `.env` file.
 - `{PROJECT_ROOT}/data/recordings` → `/workspace/s2w-data/recordings`
 - `{PROJECT_ROOT}/src/scan2wall/simulation` → `/workspace/s2w-scripts`
 
+### Public Access with Cloudflare Tunnel
+
+**Setup (one-time, 5 minutes):**
+```bash
+# 1. Install cloudflared
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/
+
+# 2. Authenticate (opens browser)
+cloudflared tunnel login
+
+# 3. Create tunnel
+cloudflared tunnel create scan2wall
+
+# 4. Route domain (delete any existing CNAME in Cloudflare DNS first!)
+cloudflared tunnel route dns scan2wall yourdomain.com
+
+# 5. Create config (replace TUNNEL-ID with actual ID from step 3)
+mkdir -p ~/.cloudflared
+cat > ~/.cloudflared/config.yml <<EOF
+tunnel: TUNNEL-ID
+credentials-file: ~/.cloudflared/TUNNEL-ID.json
+ingress:
+  - hostname: yourdomain.com
+    service: http://localhost:49100
+  - hostname: www.yourdomain.com
+    service: http://localhost:49100
+  - service: http_status:404
+EOF
+
+# 6. Start tunnel (or use ./scripts/start.sh which auto-starts it)
+cloudflared tunnel run scan2wall
+```
+
+**Benefits:**
+- Exposes local server on custom domain (e.g., `https://scan2wall.com`)
+- Automatic HTTPS/SSL via Cloudflare
+- No public IP needed, works behind firewalls
+- Free with any Cloudflare account
+- Auto-starts with `./scripts/start.sh` if configured
+
+**Tunnel runs in tmux window 2** when using `./scripts/start.sh`
+
 ## Important Technical Details
 
 ### ComfyUI Workflow
@@ -428,6 +478,8 @@ The project is organized as a proper Python package:
 |------|---------|----------|---------|
 | 8188 | ComfyUI | Host | 3D mesh generation API |
 | 49100 | Upload Server | Host | Web interface, image uploads & video serving |
-| 8090 | Isaac Worker | Docker (vscode) | Mesh conversion & simulation API |
+| 8090 | Isaac Worker | Docker (vscode) | Mesh conversion & simulation API (localhost only) |
 | 49110 | Web Viewer | Docker | Isaac Lab streaming interface |
 | 49111 | Nginx | Docker | Reverse proxy for web services |
+
+**Public Access:** Port 49100 can be exposed via Cloudflare Tunnel (see "Public Access with Cloudflare Tunnel" section above)

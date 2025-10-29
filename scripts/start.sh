@@ -374,6 +374,17 @@ tmux new-window -t $SESSION -n "upload" "cd $PROJECT_ROOT && source .venv/bin/ac
 # Wait a moment for upload server to start
 sleep 3
 
+# Check if cloudflared is installed and tunnel is configured
+if command -v cloudflared &> /dev/null && [ -f "$HOME/.cloudflared/config.yml" ]; then
+    echo "Starting Cloudflare Tunnel..."
+    tmux new-window -t $SESSION -n "cloudflared" "cloudflared tunnel run scan2wall 2>&1 | tee $PROJECT_ROOT/data/logs/cloudflared.log"
+    sleep 2
+    echo -e "${GREEN}✓${NC} Cloudflare Tunnel started"
+else
+    echo -e "${YELLOW}⚠${NC} Cloudflare Tunnel not configured (optional)"
+    echo "  To set up: see DEPLOYMENT.md"
+fi
+
 # Start Docker log capture in background
 echo "Starting Docker log capture..."
 docker logs -f vscode >> "$PROJECT_ROOT/data/logs/isaac_vscode.log" 2>&1 &
@@ -381,7 +392,12 @@ docker logs -f web-viewer >> "$PROJECT_ROOT/data/logs/isaac_webviewer.log" 2>&1 
 docker logs -f isaac-lab-nginx-1 >> "$PROJECT_ROOT/data/logs/isaac_nginx.log" 2>&1 &
 
 # Create status window
-tmux new-window -t $SESSION -n "status" "cd $PROJECT_ROOT && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:$UPLOAD_PORT\"; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:$UPLOAD_PORT > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
+TUNNEL_INFO=""
+if command -v cloudflared &> /dev/null && [ -f "$HOME/.cloudflared/config.yml" ]; then
+    TUNNEL_INFO="; echo \"Cloudflared: http://localhost:$UPLOAD_PORT → your domain\""
+fi
+
+tmux new-window -t $SESSION -n "status" "cd $PROJECT_ROOT && bash -c 'echo \"=========================================\"; echo \"scan2wall Services Running\"; echo \"=========================================\"; echo \"\"; echo \"ComfyUI:      http://localhost:8188\"; echo \"Upload:       http://localhost:$UPLOAD_PORT\"$TUNNEL_INFO; echo \"\"; echo \"Switch windows: Ctrl+B then number key\"; echo \"  0: ComfyUI\"; echo \"  1: Upload Server\"; echo \"  2: Cloudflared (if configured)\"; echo \"  3: This status\"; echo \"\"; echo \"Press Ctrl+B then D to detach\"; echo \"Press Ctrl+C to stop all services\"; echo \"\"; echo \"Checking service health...\"; echo \"\"; curl -s http://localhost:8188 > /dev/null && echo \"✓ ComfyUI:  OK\" || echo \"✗ ComfyUI:  DOWN\"; curl -s http://localhost:$UPLOAD_PORT > /dev/null && echo \"✓ Upload:   OK\" || echo \"✗ Upload:   DOWN\"; echo \"\"; echo \"Docker logs available:\"; echo \"  docker logs vscode\"; echo \"  docker logs web-viewer\"; echo \"  docker logs isaac-lab-nginx-1\"; echo \"\"; tail -f /dev/null'"
 
 # Attach to session
 echo ""

@@ -388,6 +388,88 @@
       display: none;
     }
 
+    /* Progress bar styles */
+    .progress-bar-container {
+      margin: 0 0 1.5rem 0;
+      padding: 0.75rem;
+      background: #f7f7f7;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .progress-title {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #333;
+    }
+
+    .queue-counter {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #667eea;
+      background: #e8f0fe;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+    }
+
+    .progress-stages {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .progress-stage {
+      flex: 1;
+      text-align: center;
+      padding: 0.5rem;
+      border-radius: 6px;
+      background: #e0e0e0;
+      color: #999;
+      font-size: 0.75rem;
+      font-weight: 500;
+      transition: all 0.3s;
+      position: relative;
+    }
+
+    .progress-stage.completed {
+      background: #4caf50;
+      color: white;
+    }
+
+    .progress-stage.completed::after {
+      content: '✓';
+      font-weight: bold;
+      margin-left: 0.25rem;
+    }
+
+    .progress-stage.active {
+      background: #ff9800;
+      color: white;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .queue-info {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 0.5rem;
+      text-align: center;
+    }
+
     @media (max-width: 768px) {
       #assetGrid {
         grid-template-columns: 1fr 1fr;
@@ -396,6 +478,15 @@
 
       .upload-section {
         flex-direction: column;
+      }
+
+      .progress-stages {
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .progress-stage {
+        width: 100%;
       }
 
       .thumbnail-container {
@@ -457,6 +548,22 @@
     <h1>scan2wall</h1>
     <p class="tagline">Upload a photo of an object and see it being thrown against a wall!</p>
     <p class="small" style="color: #888; margin-bottom: 1.5rem;">Tap the box below to open your camera. Upload starts automatically.</p>
+
+    <!-- Progress bar (moved to top) -->
+    <div id="progressBarContainer" class="progress-bar-container hidden">
+      <div class="progress-header">
+        <span class="progress-title">Processing Status</span>
+        <span id="queueCounter" class="queue-counter">0 jobs in queue</span>
+      </div>
+      <div class="progress-stages">
+        <div class="progress-stage" data-stage="1">Segmentation</div>
+        <div class="progress-stage" data-stage="2">3D Mesh</div>
+        <div class="progress-stage" data-stage="3">Conversion</div>
+        <div class="progress-stage" data-stage="4">Simulation</div>
+        <div class="progress-stage" data-stage="5">Complete</div>
+      </div>
+      <div id="queueInfo" class="queue-info"></div>
+    </div>
 
     <div class="upload-section">
       <div class="upload-form-container">
@@ -865,16 +972,91 @@
       setupDownloadButton('videoFollowDownloadBtn', (id) => `/video/${id}?view=follow&download=true`);
     }
 
+    // Parse stage from status_detail
+    function parseStage(statusDetail) {
+      if (!statusDetail) return null;
+      const match = statusDetail.match(/^STAGE:(\d+):(.*)/);
+      if (match) {
+        return {
+          stageNum: parseInt(match[1]),
+          message: match[2]
+        };
+      }
+      return null;
+    }
+
+    // Update progress bar
+    function updateProgressBar(stageNum) {
+      const container = document.getElementById('progressBarContainer');
+      if (!container) return;
+
+      // Show progress bar
+      if (container.classList.contains('hidden')) {
+        container.classList.remove('hidden');
+      }
+
+      // Update stage styling
+      const stages = container.querySelectorAll('.progress-stage');
+      stages.forEach((stage, index) => {
+        const num = index + 1;
+        stage.classList.remove('completed', 'active');
+
+        if (num < stageNum) {
+          stage.classList.add('completed');
+        } else if (num === stageNum) {
+          stage.classList.add('active');
+        }
+      });
+    }
+
+    // Update queue info display
+    function updateQueueInfo(data) {
+      const queueInfo = document.getElementById('queueInfo');
+      const queueCounter = document.getElementById('queueCounter');
+
+      if (!queueInfo || !queueCounter) return;
+
+      // Update queue counter (always visible when progress bar is shown)
+      const totalJobs = data.queue_total || 0;
+      if (totalJobs === 0) {
+        queueCounter.textContent = 'No jobs in queue';
+      } else if (totalJobs === 1) {
+        queueCounter.textContent = '1 job in queue';
+      } else {
+        queueCounter.textContent = `${totalJobs} jobs in queue`;
+      }
+
+      // Update detailed queue info below progress bar
+      if (data.status === 'queued' && data.queue_position > 0) {
+        const waitMin = Math.ceil(data.estimated_wait_seconds / 60);
+        queueInfo.textContent = `Position ${data.queue_position}/${data.queue_total} • Est. wait: ${waitMin} min`;
+      } else if (data.status === 'processing') {
+        queueInfo.textContent = '';
+      }
+    }
+
     // Poll job status and update assets progressively
     async function pollJobStatus(jobId) {
       try {
         const resp = await fetch(`/job/${jobId}`);
         const data = await resp.json();
 
+        // Update queue info
+        updateQueueInfo(data);
+
+        // Parse stage from status_detail
+        const stage = parseStage(data.status_detail);
+
         if (data.status === 'queued') {
           showStatus('<div class="spinner"></div>' + (data.status_detail || 'Queued for processing...'), 'info');
         } else if (data.status === 'processing') {
-          showStatus('<div class="spinner"></div>' + (data.status_detail || 'Processing...'), 'info');
+          // Update progress bar if stage info is available
+          if (stage) {
+            updateProgressBar(stage.stageNum);
+            showStatus('<div class="spinner"></div>' + stage.message, 'info');
+          } else {
+            showStatus('<div class="spinner"></div>' + (data.status_detail || 'Processing...'), 'info');
+          }
 
           // Show asset grid once processing starts
           if (assetGrid.classList.contains('hidden')) {
@@ -903,7 +1085,10 @@
             showVideo(jobId);
           }
         } else if (data.status === 'done') {
-          showStatus('✅ ' + (data.status_detail || 'Complete! Your simulation has been generated.'), 'success');
+          updateProgressBar(5); // All stages complete
+          const stage = parseStage(data.status_detail);
+          const message = stage ? stage.message : (data.status_detail || 'Complete! Your simulation has been generated.');
+          showStatus('✅ ' + message, 'success');
 
           // Load any remaining assets
           if (data.assets.nobackground_ready && document.getElementById('nobackgroundBox').classList.contains('loading')) {

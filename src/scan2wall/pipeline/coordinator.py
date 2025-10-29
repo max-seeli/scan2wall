@@ -18,6 +18,23 @@ USE_LLM = True
 USE_SCALING = True
 
 
+class JobLogger:
+    """Simple logger that writes to a per-job log file."""
+
+    def __init__(self, job_dir: Path, job_id: str):
+        self.log_file = job_dir / "job.log"
+        self.job_id = job_id
+
+    def log(self, message: str):
+        """Write a timestamped message to the log file."""
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {message}\n"
+        with open(self.log_file, 'a') as f:
+            f.write(log_line)
+        # Also print to console
+        print(f"[{self.job_id}] {message}")
+
+
 def to_container(path):
     """Convert host path to container path."""
     project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -279,23 +296,41 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     # Create status updater
     status = StatusUpdater(jobs_dict, job_id)
 
-    img = next(Path(image_path).glob("*"), None)
+    # Find the uploaded image (exclude log files)
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    img = None
+    for file in Path(image_path).iterdir():
+        if file.suffix.lower() in image_extensions:
+            img = file
+            break
+
     if img is None:
         raise FileNotFoundError(f"No image found in {image_path}")
 
+    # Create job logger AFTER finding the image
+    logger = JobLogger(Path(image_path), job_id)
+    logger.log("=== Job Started ===")
+    logger.log(f"Image path: {image_path}")
+    logger.log(f"Found image: {img}")
+
     # Run parallel segmentation and validation (shared production code path)
-    status.start("🔍 Running parallel segmentation and validation...")
+    logger.log("STAGE 1: Starting segmentation and validation")
+    status.start("STAGE:1:Segmentation & Validation - Running parallel segmentation...")
     print("=" * 60)
     print("Starting parallel segmentation pipeline...")
     print("=" * 60)
 
     seg_result = run_parallel_segmentation_and_validation(str(img), job_id)
 
-    status.stop(f"✓ Segmentation complete ({seg_result['total_time']:.1f}s)")
+    logger.log(f"STAGE 1: Complete ({seg_result['total_time']:.1f}s) - Method: {seg_result.get('method', 'N/A')}")
+    status.stop(f"STAGE:1:Segmentation & Validation - Complete ({seg_result['total_time']:.1f}s)")
 
     # Check if segmentation was accepted
     if seg_result['status'] != 'accepted':
         # Both segmentations failed
+        logger.log("ERROR: Both SAM and Inspyre segmentations REJECTED")
+        logger.log(f"  SAM: {seg_result['sam_validation'].get('description')}")
+        logger.log(f"  Inspyre: {seg_result['inspyre_validation'].get('description')}")
         print("=" * 60)
         print("❌ Both SAM and Inspyre segmentations REJECTED")
         print(f"  SAM: {seg_result['sam_validation'].get('description')}")
@@ -307,7 +342,7 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
             "Unfortunately, a clear mask could not be extracted from your picture! "
             "Please go ahead and take another photo. Tips: make sure that the object is "
             "FULLY visible, in focus, on a clear surface and that you are not holding it "
-            "with your finger occluding hands"
+            "with your occluding fingers/hands"
         )
         raise ValueError(error_msg)
 
@@ -316,8 +351,14 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     accepted_concatenated_image = seg_result['concatenated']
     accepted_props = seg_result['properties']
 
+    # Save a copy of the final validated image for preview
+    final_preview_path = Path(image_path) / f"{job_id}_final_segmented.png"
+    shutil.copy2(accepted_cropped_image, final_preview_path)
+    print(f"✓ Saved final segmented image: {final_preview_path}")
+
     # Generate 3D mesh via ComfyUI API using the accepted CROPPED image
-    status.start("🎨 Creating 3D mesh with ComfyUI (Hunyuan 3D)...")
+    logger.log("STAGE 2: Starting 3D mesh generation (Hunyuan 3D)")
+    status.start("STAGE:2:3D Mesh Generation - Creating mesh with Hunyuan 3D...")
     print("=" * 60)
     print("Starting 3D mesh generation via ComfyUI...")
     print(f"Using cropped image: {accepted_cropped_image}")
@@ -325,8 +366,9 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
 
     glb_path = generate_mesh_via_comfyui(accepted_cropped_image, job_id)
 
+    logger.log(f"STAGE 2: Complete - GLB generated: {glb_path}")
     print(f"✓ 3D mesh generated: {glb_path}")
-    status.stop("✓ 3D mesh created successfully (all assets ready)")
+    status.stop("STAGE:2:3D Mesh Generation - Complete")
 
     # Update jobs dict to indicate assets are available
     if jobs_dict and job_id in jobs_dict:
@@ -362,18 +404,23 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
         print(f"✓ Physical properties extracted (mass: {mass}kg, restitution: {restitution})")
 
     # Convert GLB mesh to USD with physics properties
-    status.start("🔧 Converting mesh to USD format...")
+    logger.log(f"STAGE 3: Starting mesh conversion to USD (mass: {mass}kg, friction: {df}/{ds})")
+    status.start("STAGE:3:Mesh Conversion - Converting to USD with physics...")
     print("\nConverting mesh to USD format...")
     usd_file = convert_mesh(Path(glb_path), props_file)
+    logger.log(f"STAGE 3: Complete - USD file: {usd_file}")
     print(f"✓ Mesh converted to USD: {usd_file}")
-    status.stop("✓ Mesh converted to USD with physics properties")
+    status.stop("STAGE:3:Mesh Conversion - Complete")
 
     # Trigger Isaac Sim simulation and wait for completion
-    status.start("🎮 Running simulation in Isaac Sim...")
+    logger.log("STAGE 4: Starting physics simulation in Isaac Sim")
+    status.start("STAGE:4:Physics Simulation - Running in Isaac Sim...")
     print("\nTriggering Isaac Sim simulation...")
     video_path = make_throwing_anim(usd_file, job_id, status)
+    logger.log(f"STAGE 4: Complete - Videos generated")
+    logger.log(f"=== Job Complete - Total pipeline finished ===")
     print(f"✓ Simulation complete! Video: {video_path}")
-    status.stop("✅ Done!")
+    status.stop("STAGE:5:Complete - Videos generated!")
 
     print("=" * 60)
     print("Pipeline complete!")

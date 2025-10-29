@@ -90,8 +90,8 @@ RequestHandler.job_results = job_results
 
 def run_http_server():
     """Run HTTP server in background thread."""
-    server = HTTPServer(('0.0.0.0', 8090), RequestHandler)
-    print("🌐 HTTP server started on port 8090")
+    server = HTTPServer(('127.0.0.1', 8090), RequestHandler)  # Bind to localhost only for security
+    print("🌐 HTTP server started on localhost:8090 (not exposed to network)")
     server.serve_forever()
 
 

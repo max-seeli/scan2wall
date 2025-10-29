@@ -11,10 +11,21 @@ from PIL import Image
 import io
 from scan2wall.pipeline.coordinator import process_image
 
+# Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "JOBS"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Initialize rate limiter (works with Cloudflare via X-Forwarded-For)
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="scan2wall")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 # Mount static files directory
@@ -25,18 +36,70 @@ if static_dir.exists():
 JOBS: Dict[str, Dict[str, Any]] = {}
 
 
+def get_queue_info(job_id: str) -> dict:
+    """Calculate queue position and estimated wait time for a job.
+
+    Args:
+        job_id: The job ID to check
+
+    Returns:
+        dict with keys:
+            - queue_position: Position in queue (1-indexed), 0 if processing/done
+            - queue_total: Total jobs currently queued or processing (global count)
+            - estimated_wait_seconds: Estimated wait time in seconds
+    """
+    # Count total jobs in queue/processing (global count, always return this)
+    total_queued = sum(1 for j in JOBS.values() if j["status"] in ["queued", "processing"])
+
+    if job_id not in JOBS:
+        return {"queue_position": 0, "queue_total": total_queued, "estimated_wait_seconds": 0}
+
+    job = JOBS[job_id]
+
+    # Count jobs ahead of this one (older jobs that are queued or processing)
+    job_created_at = job["created_at"]
+    jobs_ahead = 0
+
+    for other_id, other_job in JOBS.items():
+        if other_job["status"] in ["queued", "processing"]:
+            # Count jobs created before this one
+            if other_job["created_at"] < job_created_at:
+                jobs_ahead += 1
+
+    # Position is 1-indexed (1st in queue, 2nd in queue, etc.)
+    queue_position = jobs_ahead + 1 if job["status"] == "queued" else 0
+
+    # Estimate 60 seconds per job ahead
+    estimated_wait_seconds = jobs_ahead * 60
+
+    return {
+        "queue_position": queue_position,
+        "queue_total": total_queued,  # Always return global count
+        "estimated_wait_seconds": estimated_wait_seconds
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def upload_page(request: Request):
     return templates.TemplateResponse("upload.html", {"request": request})
 
 @app.post("/upload")
-async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+@limiter.limit("10/hour")  # 10 uploads per IP per hour
+async def upload_image(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     print("[INFO] Received file.")
 
     # --- Step 1: read all bytes once ---
     contents = await file.read()
     file.file.seek(0)  # just in case
-    
+
+    # --- Step 1.5: Check file size (20MB limit) ---
+    MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"📦 File too large! Your image is {len(contents) / 1024 / 1024:.1f}MB. Maximum size is 20MB. Try compressing your image or taking a photo with lower resolution."
+        )
+
     # --- Step 2: signature check ---
     kind = imghdr.what(None, contents[:512])
     if kind not in {"jpeg", "png", "webp", "gif", "jpg"}:
@@ -55,7 +118,7 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
         )
 
     # --- Step 4: save ---
-    job_id = uuid.uuid4().hex[:8]
+    job_id = uuid.uuid4().hex  # Full 32-character UUID (prevents enumeration)
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     suffix = uuid.uuid4().hex[:6]
@@ -85,7 +148,8 @@ async def upload_image(background_tasks: BackgroundTasks, file: UploadFile = Fil
     )
 
 @app.get("/job/{job_id}")
-async def get_job_status(job_id: str):
+@limiter.limit("60/minute")  # 60 status checks per minute (1/second reasonable)
+async def get_job_status(request: Request, job_id: str):
     """Get the status of a processing job."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -110,6 +174,9 @@ async def get_job_status(job_id: str):
     video_follow_ready = video_follow_path.exists()
     video_ready = video_static_ready and video_follow_ready
 
+    # Get queue information
+    queue_info = get_queue_info(job_id)
+
     return JSONResponse({
         "job_id": job["id"],
         "status": job["status"],
@@ -119,6 +186,9 @@ async def get_job_status(job_id: str):
         "processed_path": job.get("processed_path"),
         "video_filename": job.get("video_filename"),
         "error": job.get("error"),
+        "queue_position": queue_info["queue_position"],
+        "queue_total": queue_info["queue_total"],
+        "estimated_wait_seconds": queue_info["estimated_wait_seconds"],
         "assets": {
             "nobackground_ready": nobackground_ready,
             "decoded_ready": decoded_ready,
@@ -130,10 +200,8 @@ async def get_job_status(job_id: str):
         }
     })
 
-@app.get("/jobs")
-async def list_jobs():
-    """List all jobs (for debugging/admin)."""
-    return JSONResponse({"jobs": list(JOBS.values())})
+# /jobs endpoint removed for privacy - users should not see other users' jobs
+# For queue position, each user only sees their own job via /job/{job_id}
 
 @app.get("/video/{job_id}")
 async def get_video(job_id: str, view: str = "static", download: bool = False):
@@ -196,13 +264,27 @@ async def get_original_image(job_id: str):
 
 @app.get("/asset/{job_id}/nobackground")
 async def get_nobackground_image(job_id: str, download: bool = False):
-    """Serve the image with background removed (segmentation cropped image)."""
+    """Serve the image with background removed (final validated segmentation image)."""
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
 
     job_dir = UPLOAD_DIR / job_id
 
-    # Look for cropped segmentation files (SAM or Inspyre)
+    # First, look for the final validated image (saved by coordinator)
+    final_image = job_dir / f"{job_id}_final_segmented.png"
+    if final_image.exists():
+        headers = {}
+        if download:
+            headers["Content-Disposition"] = f"attachment; filename={job_id}_segmented.png"
+
+        return FileResponse(
+            path=str(final_image),
+            media_type="image/png",
+            filename=f"{job_id}_segmented.png",
+            headers=headers
+        )
+
+    # Fallback: look for cropped segmentation files (SAM or Inspyre)
     # Pattern: {job_id}_sam_seg_cropped_*.png or {job_id}_inspyre_seg_cropped_*.png
     cropped_files = list(job_dir.glob(f"{job_id}_*_seg_cropped_*.png"))
 
@@ -291,6 +373,29 @@ async def get_properties(job_id: str, download: bool = False):
         path=str(properties_file),
         media_type="application/json",
         filename=f"{job_id}_properties.json",
+        headers=headers
+    )
+
+@app.get("/asset/{job_id}/logs")
+async def get_job_logs(job_id: str, download: bool = False):
+    """Serve the per-job log file."""
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = UPLOAD_DIR / job_id
+    log_file = job_dir / "job.log"
+
+    if not log_file.exists():
+        raise HTTPException(status_code=404, detail="Job log not yet available")
+
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={job_id}_job.log"
+
+    return FileResponse(
+        path=str(log_file),
+        media_type="text/plain",
+        filename=f"{job_id}_job.log",
         headers=headers
     )
 
