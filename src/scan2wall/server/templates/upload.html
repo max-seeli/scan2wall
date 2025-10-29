@@ -204,6 +204,10 @@
       gap: 1rem;
     }
 
+    #scoreBox {
+      grid-column: span 2;
+    }
+
     .video-item {
       flex: 1;
       display: flex;
@@ -562,6 +566,37 @@
       font-size: 0.85rem;
       color: #555;
     }
+
+    /* Destruction Score Display */
+    .score-display {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+    .score-number {
+      font-size: 4rem;
+      font-weight: 800;
+      margin: 0.5rem 0;
+    }
+    .score-label {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 0.5rem;
+    }
+    .score-rating {
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      margin-top: 0.5rem;
+    }
+    .score-gray { color: #999; background: #f0f0f0; }
+    .score-bronze { color: #CD7F32; background: #FFF4E6; }
+    .score-silver { color: #C0C0C0; background: #F5F5F5; }
+    .score-gold { color: #FFD700; background: #FFFBEA; }
   </style>
 </head>
 <body>
@@ -653,6 +688,13 @@
         <div id="videoFollowContainer" class="video-item">
           <h4>Follow Camera View</h4>
           <button class="video-download-btn hidden" id="videoFollowDownloadBtn" title="Download Follow Video">⬇</button>
+          <div class="loading-text">Waiting for simulation...</div>
+        </div>
+      </div>
+
+      <div id="scoreBox" class="asset-box loading">
+        <h3>🏆 Destruction Score</h3>
+        <div class="asset-content">
           <div class="loading-text">Waiting for simulation...</div>
         </div>
       </div>
@@ -998,6 +1040,42 @@
       setupDownloadButton('videoFollowDownloadBtn', (id) => `/video/${id}?view=follow&download=true`);
     }
 
+    function showScore(score) {
+      const box = document.getElementById('scoreBox');
+      const content = box.querySelector('.asset-content');
+
+      // Determine rating based on score ranges
+      let rating, ratingClass, ratingColor;
+      if (score >= 750) {
+        rating = '🥇 EXCELLENT';
+        ratingClass = 'score-gold';
+        ratingColor = '#FFD700';
+      } else if (score >= 500) {
+        rating = '🥈 STRONG';
+        ratingClass = 'score-silver';
+        ratingColor = '#C0C0C0';
+      } else if (score >= 200) {
+        rating = '🥉 GOOD';
+        ratingClass = 'score-bronze';
+        ratingColor = '#CD7F32';
+      } else {
+        rating = '⚪ WEAK';
+        ratingClass = 'score-gray';
+        ratingColor = '#999';
+      }
+
+      content.innerHTML = `
+        <div class="score-display">
+          <div class="score-label">Destruction Score</div>
+          <div class="score-number" style="color: ${ratingColor}">${score}</div>
+          <div class="score-rating ${ratingClass}">${rating}</div>
+        </div>
+      `;
+
+      box.classList.remove('loading');
+      box.classList.add('ready');
+    }
+
     // Parse stage from status_detail
     function parseStage(statusDetail) {
       if (!statusDetail) return null;
@@ -1140,6 +1218,11 @@
           // Show video
           if (data.assets.video_ready) {
             showVideo(jobId);
+          }
+
+          // Show destruction score
+          if (data.destruction_score !== null && data.destruction_score !== undefined) {
+            showScore(data.destruction_score);
           }
 
           return true; // done

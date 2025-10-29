@@ -37,6 +37,40 @@ from scan2wall.simulation.rendering_utils import (
     create_watermark_tensor
 )
 
+def calculate_destruction_score(
+    initial_positions: np.ndarray,
+    wall_bricks: RigidObject
+) -> int:
+    """
+    Calculate destruction score based on brick displacement.
+
+    Args:
+        initial_positions: Initial brick positions (N, 3) numpy array
+        wall_bricks: RigidObject containing all wall bricks
+
+    Returns:
+        Score from 0-999 based on number of bricks displaced >30cm
+    """
+    # Get final positions of all bricks
+    final_positions = wall_bricks.data.root_state_w[:, 0:3].cpu().numpy()
+
+    # Calculate displacement for each brick
+    displacements = np.linalg.norm(final_positions - initial_positions, axis=1)
+
+    # Count bricks displaced more than 30cm
+    displaced_count = np.sum(displacements > 0.30)
+
+    # Calculate score: 12 points per brick, capped at 999
+    score = min(999, int(displaced_count * 12))
+
+    print(f"📊 Destruction Analysis:", flush=True)
+    print(f"   Total bricks: {len(initial_positions)}", flush=True)
+    print(f"   Bricks displaced >30cm: {displaced_count}", flush=True)
+    print(f"   Max displacement: {displacements.max():.2f}m", flush=True)
+    print(f"   🏆 Score: {score}/999", flush=True)
+
+    return score
+
 def _first_mesh_under(stage, root_path: str) -> str | None:
     """Find the first Mesh prim under a given root path."""
     root = stage.GetPrimAtPath(root_path)
@@ -245,15 +279,27 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
         scene_builder.load_base_scene(base_scene_path, stage)
 
+        # Create RigidObject for wall bricks BEFORE pre-settle
+        print(f"🎯 Initializing destruction tracking...", flush=True)
+        wall_bricks_cfg = RigidObjectCfg(
+            prim_path="/World/StaticObjects/Wall/brick_.*",  # Regex pattern matches all bricks
+            spawn=None  # Don't spawn new objects, just track existing ones
+        )
+        wall_bricks = RigidObject(cfg=wall_bricks_cfg)
+
         # Pre-settle phase: Let wall stabilize before spawning object (PhysX best practice)
         # This allows contacts to stabilize and friction cones to align
         print(f"🧱 Pre-settling wall (150 steps)...", flush=True)
-        sim_context.reset()
+        sim_context.reset()  # This initializes the RigidObject
         dt = sim_context.get_physics_dt()
         settle_steps = 150  # 1.5 seconds at 100Hz physics timestep
         for step in range(settle_steps):
             sim_context.step(render=False)
         print(f"✅ Wall pre-settled", flush=True)
+
+        # Record initial positions after pre-settle (this is our baseline)
+        wall_brick_positions_initial = wall_bricks.data.root_state_w[:, 0:3].cpu().numpy()
+        print(f"✅ Tracking {len(wall_brick_positions_initial)} bricks", flush=True)
 
         # Load object temporarily to check rigidity type
         scene_builder.load_usdz_object(stage, usd_path, position=(0.0, 0.0, 0.5))
@@ -434,7 +480,7 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
 
         # PHASE 4: Apply throwing velocity and start recording immediately
         print(f"🎯 Applying throwing velocity and starting recording...", flush=True)
-        velocity_tensor = torch.tensor([[0.0, 18.2, 4.0, 0.0, 0.0, 2.0]], device=physics_obj.device)
+        velocity_tensor = torch.tensor([[0.0, 18.2, 6.48, 0.0, 0.0, 2.0]], device=physics_obj.device)
         physics_obj.write_root_velocity_to_sim(velocity_tensor)
         physics_obj.write_data_to_sim()
 
@@ -483,6 +529,10 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         ffmpeg_encode_from_memory(frames_static_numpy, static_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
         ffmpeg_encode_from_memory(frames_follow_numpy, follow_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
 
+        # Calculate destruction score
+        print(f"\n🎯 Calculating destruction score...", flush=True)
+        destruction_score = calculate_destruction_score(wall_brick_positions_initial, wall_bricks)
+
         elapsed = time.time() - start_time
         logger.info(f"Simulation complete in {elapsed:.2f}s: {job_id}")
 
@@ -490,7 +540,8 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             "status": "completed",
             "static_video": static_video,
             "follow_video": follow_video,
-            "frames": video_length
+            "frames": video_length,
+            "destruction_score": destruction_score
         }
 
     except Exception as e:

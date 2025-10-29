@@ -355,16 +355,16 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     if USE_LLM and accepted_props:
         dims = accepted_props.get("dimensions_m", {})
         max_dimension = max(dims.get("length", 0), dims.get("width", 0), dims.get("height", 0))
-        if max_dimension > 5.0:
-            logger.log(f"ERROR: Object too large - max dimension: {max_dimension:.2f}m (limit: 5.0m)")
-            print(f"❌ Object rejected: max dimension {max_dimension:.2f}m exceeds 5m limit")
+        if max_dimension > 10.0:
+            logger.log(f"ERROR: Object too large - max dimension: {max_dimension:.2f}m (limit: 10.0m)")
+            print(f"❌ Object rejected: max dimension {max_dimension:.2f}m exceeds 10m limit")
             if jobs_dict and job_id in jobs_dict:
                 jobs_dict[job_id]["status"] = "rejected"
             raise ValueError(
                 f"Object is too large! Maximum dimension is {max_dimension:.1f} meters. "
-                f"Please photograph an object with max 5 meter length!"
+                f"Please photograph an object with max 10 meter length!"
             )
-        print(f"✓ Size validation passed: max dimension {max_dimension:.2f}m (limit: 5.0m)")
+        print(f"✓ Size validation passed: max dimension {max_dimension:.2f}m (limit: 10.0m)")
 
     # Save a copy of the final validated image for preview
     final_preview_path = Path(image_path) / f"{job_id}_final_segmented.png"
@@ -431,10 +431,17 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     logger.log("STAGE 4: Starting physics simulation in Isaac Sim")
     status.start("STAGE:4:Physics Simulation - Running in Isaac Sim...")
     print("\nTriggering Isaac Sim simulation...")
-    video_path = make_throwing_anim(usd_file, job_id, status)
-    logger.log(f"STAGE 4: Complete - Videos generated")
+    sim_result = make_throwing_anim(usd_file, job_id, status)
+    destruction_score = sim_result.get("destruction_score", 0)
+    logger.log(f"STAGE 4: Complete - Videos generated, Destruction Score: {destruction_score}/999")
     logger.log(f"=== Job Complete - Total pipeline finished ===")
-    print(f"✓ Simulation complete! Video: {video_path}")
+    print(f"✓ Simulation complete! Videos: {sim_result}")
+    print(f"🏆 Destruction Score: {destruction_score}/999")
+
+    # Save score to job directory
+    if jobs_dict and job_id in jobs_dict:
+        jobs_dict[job_id]["destruction_score"] = destruction_score
+
     status.stop("STAGE:5:Complete - Videos generated!")
 
     print("=" * 60)
@@ -819,7 +826,8 @@ def make_throwing_anim(file: str, job_id: str = None, status_updater=None):
 
     return {
         "static": to_host(result.get("video_path_static")),
-        "follow": to_host(result.get("video_path_follow"))
+        "follow": to_host(result.get("video_path_follow")),
+        "destruction_score": result.get("destruction_score", 0)
     }
 
 if __name__ == "__main__":
