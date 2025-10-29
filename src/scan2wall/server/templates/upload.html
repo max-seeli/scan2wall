@@ -795,13 +795,13 @@
 
         if (props.dimensions_m) {
           html += '<dt>Dimensions (m)</dt>';
-          html += `<dd>L: ${props.dimensions_m.length?.value || 'N/A'}, `;
-          html += `W: ${props.dimensions_m.width?.value || 'N/A'}, `;
-          html += `H: ${props.dimensions_m.height?.value || 'N/A'}</dd>`;
+          html += `<dd>L: ${props.dimensions_m.length || 'N/A'}, `;
+          html += `W: ${props.dimensions_m.width || 'N/A'}, `;
+          html += `H: ${props.dimensions_m.height || 'N/A'}</dd>`;
         }
 
         if (props.weight_kg) {
-          html += `<dt>Weight</dt><dd>${props.weight_kg.value} kg</dd>`;
+          html += `<dt>Weight</dt><dd>${props.weight_kg} kg</dd>`;
         }
 
         if (props.friction_coefficients) {

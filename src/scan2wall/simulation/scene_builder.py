@@ -30,6 +30,20 @@ def create_base_scene_usd(output_path: str = "/workspace/s2w-scripts/scenes/thro
 
     stage = sim_context.stage
 
+    # Configure PhysX scene for stable stacking (Legacy collision detection)
+    physx_scene_path = "/World/physicsScene"
+    if stage.GetPrimAtPath(physx_scene_path).IsValid():
+        from pxr import PhysxSchema
+        physx_scene = PhysxSchema.PhysxSceneAPI.Apply(stage.GetPrimAtPath(physx_scene_path))
+
+        # CRITICAL: Disable PCM, use Legacy collision for stable stacking
+        physx_scene.CreateEnableCCDAttr().Set(True)  # Continuous collision detection
+        physx_scene.CreateEnableStabilizationAttr().Set(True)  # Enable stabilization
+
+        print(f"  🔧 PhysX scene configured: Legacy collision, CCD enabled")
+    else:
+        print(f"  ⚠️  PhysX scene not found at {physx_scene_path}")
+
     # Clear existing scene elements
     world_prim = stage.GetPrimAtPath("/World")
     if world_prim.IsValid():
@@ -225,11 +239,34 @@ def load_usdz_object(stage: Usd.Stage, usd_path: str, position: tuple = (0.0, 0.
     else:
         print(f"  ⚠️  No textures were fixed!", flush=True)
 
+    # Read scale from USD file BEFORE loading as reference
+    # (so we can preserve it on the parent Xform)
+    temp_stage = Usd.Stage.Open(usd_file)
+    temp_root = temp_stage.GetDefaultPrim()
+    existing_scale = None
+    if temp_root:
+        temp_xform = UsdGeom.Xformable(temp_root)
+        for op in temp_xform.GetOrderedXformOps():
+            if op.GetOpType() == UsdGeom.XformOp.TypeScale:
+                existing_scale = op.Get()
+                print(f"  📐 Found scale in USD: {existing_scale}", flush=True)
+                break
+
     # Create xform prim for the object
     obj_prim = stage.DefinePrim("/World/Objects/custom_obj", "Xform")
 
-    # Set translation
+    # Set transforms: Scale → Rotate (Y→Z) → Translate
+    # Order matters! Scale first, then rotate, then translate
     xformable = UsdGeom.Xformable(obj_prim)
+    if existing_scale:
+        xformable.AddScaleOp().Set(existing_scale)
+
+    # Rotate 90° around X-axis to convert Y-up to Z-up
+    # Quaternion: (w, x, y, z) = (cos(45°), sin(45°), 0, 0) for 90° around X
+    import math
+    xformable.AddRotateXOp().Set(90.0)  # 90 degrees around X-axis
+    print(f"  🔄 Applied 90° X-rotation (Y-up → Z-up)", flush=True)
+
     xformable.AddTranslateOp().Set(position)
 
     # Add the USD as a reference (now with absolute texture paths)
@@ -340,11 +377,11 @@ def _create_ground_plane(stage: Usd.Stage) -> None:
         # Add PhysX-specific collision tuning for deformables
         if not ground_prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
             physx_coll = PhysxSchema.PhysxCollisionAPI.Apply(ground_prim)
-            # Contact offset: distance at which contacts are detected (1-2% of typical object size)
-            physx_coll.CreateContactOffsetAttr().Set(0.01)  # 1cm contact detection distance
-            # Rest offset: minimum separation distance (typically 0 for stable ground)
-            physx_coll.CreateRestOffsetAttr().Set(0.0)
-            print("   ✓ Applied PhysxCollisionAPI with contact/rest offsets", flush=True)
+            # Contact offset: distance at which contacts are detected (5cm for soft bodies)
+            physx_coll.CreateContactOffsetAttr().Set(0.05)  # 5cm contact detection for deformables
+            # Rest offset: minimum separation distance (1mm to prevent sinking)
+            physx_coll.CreateRestOffsetAttr().Set(0.001)  # 1mm minimum separation
+            print("   ✓ Applied PhysxCollisionAPI with contact/rest offsets (5cm/1mm)", flush=True)
 
         # Create and bind physics material with proper friction
         mat_path = "/World/PhysicsMaterials/GroundMaterial"
@@ -360,7 +397,42 @@ def _create_ground_plane(stage: Usd.Stage) -> None:
         # Bind material to ground
         sim_utils.bind_physics_material("/World/defaultGroundPlane", mat_path, stage=stage)
         print("   ✓ Bound physics material to ground", flush=True)
-        print("✅ Phase A complete: Ground ready for deformables", flush=True)
+
+    # Phase A2: Create thick collision box under ground to prevent penetration
+    print("🔧 Phase A2: Creating solid collision floor...", flush=True)
+    floor_box_path = "/World/CollisionFloor"
+    floor_box_prim = stage.GetPrimAtPath(floor_box_path)
+
+    if not floor_box_prim.IsValid():
+        from pxr import UsdGeom
+
+        # Create cube at z=-0.25 (center), spanning z=-0.5 to z=0
+        floor_box_prim = stage.DefinePrim(floor_box_path, "Cube")
+        xform = UsdGeom.Xformable(floor_box_prim)
+        xform.AddTranslateOp().Set((0.0, 0.0, -0.25))  # Center at z=-0.25
+        xform.AddScaleOp().Set((50.0, 50.0, 0.5))  # 50m x 50m x 0.5m thick
+
+        # Make it a static rigid body with collision
+        UsdPhysics.CollisionAPI.Apply(floor_box_prim)
+        rigid_body = UsdPhysics.RigidBodyAPI.Apply(floor_box_prim)
+        rigid_body.CreateRigidBodyEnabledAttr().Set(False)  # Static (not dynamic)
+
+        # Apply same collision tuning as ground
+        physx_coll = PhysxSchema.PhysxCollisionAPI.Apply(floor_box_prim)
+        physx_coll.CreateContactOffsetAttr().Set(0.05)
+        physx_coll.CreateRestOffsetAttr().Set(0.001)
+
+        # Bind same physics material
+        sim_utils.bind_physics_material(floor_box_path, mat_path, stage=stage)
+
+        # Make it invisible (collision only, no rendering)
+        imageable = UsdGeom.Imageable(floor_box_prim)
+        imageable.CreateVisibilityAttr().Set("invisible")
+
+        print("   ✓ Created 50m×50m×0.5m collision box at z=[-0.5, 0]", flush=True)
+        print("   ✓ Box is invisible (collision only)", flush=True)
+
+    print("✅ Phase A complete: Ground ready for deformables with solid floor", flush=True)
 
 
 def _create_lighting(stage: Usd.Stage) -> None:
@@ -445,21 +517,26 @@ def build_wall(
     """
     prim_utils.create_prim(parent, "Xform")
 
-    # High-friction brick material for stability
+    # High-friction brick material for stability (friction ≤ 1.0 per PhysX best practices)
     brick_physics_material = sim_utils.RigidBodyMaterialCfg(
-        static_friction=1.2,   # Very high friction (bricks are rough)
-        dynamic_friction=1.0,
+        static_friction=1.0,   # Max recommended by PhysX (≤1.0)
+        dynamic_friction=0.8,  # Slightly lower than static
         restitution=0.1        # Low bounce
     )
 
+    # DYNAMIC bricks - STABLE STACKING CONFIG (Legacy collision + high solver iterations)
     cfg_brick = sim_utils.CuboidCfg(
-        size=(brick_width * 0.98, brick_depth * 0.98, brick_height * 0.98),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        collision_props=sim_utils.CollisionPropertiesCfg(
-            contact_offset=0.005,
-            rest_offset=-0.001
+        size=(brick_width * 0.98, brick_depth * 0.98, brick_height * 0.98),  # 98% size
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            solver_position_iteration_count=64,  # 64 for tall stacks (PhysX best practice)
+            solver_velocity_iteration_count=16,  # 16 for friction stability
+            stabilization_threshold=0.001,       # Lower = more stable on GPU
         ),
-        mass_props=sim_utils.MassPropertiesCfg(mass=2.0),  # Heavy bricks
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.005,  # 5mm contact detection
+            rest_offset=-0.001     # 1mm penetration for stability
+        ),
+        mass_props=sim_utils.MassPropertiesCfg(mass=2.0),  # 2kg bricks
         physics_material=brick_physics_material,
         visual_material=sim_utils.PreviewSurfaceCfg(
             diffuse_color=(0.7, 0.3, 0.2),  # Reddish-brown
@@ -468,8 +545,12 @@ def build_wall(
     )
 
     x0, y0 = base_xy
-    brick_spacing_x = brick_width + gap
-    brick_spacing_z = brick_height + gap
+    # CRITICAL: Gap must be < contact_offset (5mm) to prevent floating bricks
+    gap_x = 0.002  # 2mm horizontal gap (< 5mm contact_offset!)
+    gap_z = 0.002  # 2mm vertical gap (< 5mm contact_offset!)
+
+    brick_spacing_x = brick_width + gap_x
+    brick_spacing_z = brick_height + gap_z
 
     for row in range(height):
         # Alternate brick pattern (offset every other row)

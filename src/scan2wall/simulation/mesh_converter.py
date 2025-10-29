@@ -196,25 +196,36 @@ def apply_physics_properties(
 
 def scale_mesh_to_real_size(usd_file: str, target_size_meters: float) -> None:
     """Scale mesh so its max dimension equals target_size_meters."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     stage = Usd.Stage.Open(usd_file)
     root = stage.GetDefaultPrim()
-    
+
     # Get current max dimension
     bbox = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default']).ComputeWorldBound(root)
-    current_max = max(bbox.ComputeAlignedBox().GetSize())
-    
+    bbox_size = bbox.ComputeAlignedBox().GetSize()
+    current_max = max(bbox_size)
+
+    logger.info(f"📏 Mesh bbox before scaling: {bbox_size[0]:.3f}m × {bbox_size[1]:.3f}m × {bbox_size[2]:.3f}m (max: {current_max:.3f}m)")
+    logger.info(f"🎯 Target max dimension: {target_size_meters:.3f}m")
+
     # Apply scale transform
     scale_factor = target_size_meters / current_max if current_max > 0 else 1.0
+    logger.info(f"📐 Applying scale factor: {scale_factor:.4f}")
+
     xform = UsdGeom.Xformable(root)
-    
+
     # Reuse existing scale op if present
-    scale_op = next((op for op in xform.GetOrderedXformOps() 
+    scale_op = next((op for op in xform.GetOrderedXformOps()
                      if op.GetOpType() == UsdGeom.XformOp.TypeScale), None)
     if not scale_op:
         scale_op = xform.AddScaleOp(UsdGeom.XformOp.PrecisionFloat)
-    
+
     scale_op.Set(Gf.Vec3f(scale_factor, scale_factor, scale_factor))
     stage.Save()
+
+    logger.info(f"✓ Mesh scaled: {current_max:.3f}m → {target_size_meters:.3f}m")
 
 
 def store_metadata(

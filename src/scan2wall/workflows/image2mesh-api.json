@@ -248,6 +248,7 @@
       "max_facenum": 100000,
       "smooth_normals": true,
       "smooth_surface": true,
+      "make_watertight": true,
       "trimesh": [
         "258",
         0

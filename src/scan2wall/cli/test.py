@@ -381,13 +381,13 @@ def run_segmentation_stage(image_files: List[Path]):
                     click.echo(f"     ⚠️  Property inference failed: {props['error']}")
                     props = {
                         "object_type": "unknown",
-                        "weight_kg": {"value": 1.0},
+                        "weight_kg": 1.0,
                         "friction_coefficients": {"static": 0.6, "dynamic": 0.5},
-                        "restitution": {"value": 0.5}
+                        "restitution": 0.5
                     }
                     click.echo(f"     Using defaults (mass: 1.0kg)")
                 else:
-                    mass = props.get("weight_kg", {}).get("value", 1.0)
+                    mass = props.get("weight_kg", 1.0)
                     click.echo(f"     Properties already inferred (mass: {mass:.2f}kg)")
 
                 # Always save properties (either inferred or defaults)
@@ -579,7 +579,7 @@ def run_usd_conversion_stage(glb_files: List[Path]):
             # Find json path!
             click.echo("  📊 Finding properties json...")
 
-            json_path = glb_path.with_suffix('.json')
+            json_path = Path(str(glb_path).replace(".glb","_properties.json"))
             if os.path.isfile(json_path):
                 click.echo(f"     Using {json_path}")
             else:

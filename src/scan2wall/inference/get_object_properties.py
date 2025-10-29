@@ -26,26 +26,21 @@ Return ONLY valid JSON in this exact schema:
   "object_type": "string",
   "use_case": "string",
   "rigidity": {
-    "type": "rigid" | "deformable",
-    "youngs_modulus_gpa": float,
-    "poissons_ratio": float,
-    "description": "string"
+    "type": "rigid" | "deformable"
   },
   "dimensions_m": {
-    "length": {"value": float},
-    "width": {"value": float},
-    "height": {"value": float}
+    "length": float,
+    "width": float,
+    "height": float
   },
-  "weight_kg": {"value": float},
+  "weight_kg": float,
   "friction_coefficients": {
     "static": float,
     "dynamic": float
   },
-  "restitution": {
-    "value": float,
-    "description": "string"
-  },
-  "assumptions": ["string"],
+  "restitution": float,
+  "restitution_description": "string",
+  "assumptions": ["string"]
 }
 
 Guidelines:
@@ -65,21 +60,8 @@ Guidelines:
 - rigidity:
   * type: "rigid" for hard objects (metal, wood, hard plastic), "deformable" for soft/flexible objects (fabric, foam, rubber)
   
-  * youngs_modulus_gpa: Material stiffness in GPa (elastic modulus)
-    - Very stiff (rigid): 70-200 GPa (steel, aluminum, glass, ceramics)
-    - Stiff: 10-70 GPa (brass, concrete, bone)
-    - Moderately stiff: 1-10 GPa (wood, hard plastics like acrylic, nylon)
-    - Flexible (deformable): 0.01-1 GPa (soft plastics, leather, rubber)
-    - Very flexible: 0.0001-0.01 GPa (foam, silicone, soft fabrics)
-  * poissons_ratio: How much material expands laterally when stretched (typically 0.0-0.5)
-    - Nearly incompressible (rubber, soft tissue): 0.45-0.5
-    - Typical solids (metals, plastics, wood): 0.25-0.35
-    - Foams and porous materials: 0.1-0.25
-    - Cork (highly compressible): ~0.0
-  * description: Brief explanation of the material's mechanical behavior (e.g., "bends easily", "rigid frame", "soft cushion")
-
 - Be physically accurate - if an object is clearly rigid (like metal tools, wooden furniture), use high Young's modulus.
-- Return only the JSON, no prose.
+- Return ONLY the JSON, no prose.
 """
 
 def get_object_properties(image_path):
@@ -157,6 +139,16 @@ def get_object_properties(image_path):
         # Parse response JSON
         try:
             result = json.loads(response.text)
+
+            # Validate that result is a dict (not a list or other type)
+            if not isinstance(result, dict):
+                print(f"⚠ Gemini returned non-dict JSON type: {type(result).__name__}")
+                print(f"   Raw response: {response.text[:200]}")
+                return {
+                    "error": "Invalid JSON structure (expected dict, got list or other type)",
+                    "raw": response.text
+                }
+
             parse_elapsed = time.time() - parse_start
             print(f"  📄 Response parsing: {parse_elapsed:.3f}s, response size: {len(response.text)} chars")
         except json.JSONDecodeError:

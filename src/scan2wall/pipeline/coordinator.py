@@ -188,19 +188,19 @@ def extract_physics_properties(props: dict, use_scaling: bool = True) -> tuple:
                - restitution: 0.5
                - scaling: 1.0 meters (max dimension)
     """
-    # Extract with safe defaults
-    mass = props.get("weight_kg", {}).get("value", 1.0)
+    # Extract with safe defaults (simplified schema - no nested ["value"])
+    mass = props.get("weight_kg", 1.0)
     df = props.get("friction_coefficients", {}).get("dynamic", 0.5)
     ds = props.get("friction_coefficients", {}).get("static", 0.6)
-    restitution = props.get("restitution", {}).get("value", 0.5)
+    restitution = props.get("restitution", 0.5)
 
     # Compute scaling from dimensions if available
     scaling = 1.0  # Default
     if use_scaling and props and "error" not in props:
         dims = props.get("dimensions_m", {})
-        length = dims.get("length", {}).get("value", 0)
-        width = dims.get("width", {}).get("value", 0)
-        height = dims.get("height", {}).get("value", 0)
+        length = dims.get("length", 0)
+        width = dims.get("width", 0)
+        height = dims.get("height", 0)
 
         if length > 0 or width > 0 or height > 0:
             scaling = max(length, width, height)
@@ -364,14 +364,14 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     # Convert GLB mesh to USD with physics properties
     status.start("🔧 Converting mesh to USD format...")
     print("\nConverting mesh to USD format...")
-    usd_file = convert_mesh(Path(glb_path), props_file, f"{job_id}.glb", mass=mass, df=df, ds=ds, restitution=restitution, scaling=scaling, object_type=object_type, scene_description=scene_description)
+    usd_file = convert_mesh(Path(glb_path), props_file)
     print(f"✓ Mesh converted to USD: {usd_file}")
     status.stop("✓ Mesh converted to USD with physics properties")
 
     # Trigger Isaac Sim simulation and wait for completion
     status.start("🎮 Running simulation in Isaac Sim...")
     print("\nTriggering Isaac Sim simulation...")
-    video_path = make_throwing_anim(usd_file, scaling, job_id, status)
+    video_path = make_throwing_anim(usd_file, job_id, status)
     print(f"✓ Simulation complete! Video: {video_path}")
     status.stop("✅ Done!")
 
@@ -720,9 +720,11 @@ def convert_mesh(glb_file: Path, json_file: Path, output_dir=None) -> str:
             properties = json.load(f)
             rigidity_type = properties.get('rigidity', {}).get('type', 'rigid')
 
-            if rigidity_type == "deformable":
-                print(f"  Deformable object detected - repairing mesh...")
-                glb_file = repair_mesh_for_deformable(glb_file)
+            # NOTE: Mesh repair now handled by ComfyUI's make_watertight option (PyMeshLab)
+            # This avoids redundant I/O and prevents convex hull fallback from destroying detail
+            # if rigidity_type == "deformable":
+            #     print(f"  Deformable object detected - repairing mesh...")
+            #     glb_file = repair_mesh_for_deformable(glb_file)
 
     payload = {
         "glb_path": to_container(glb_file),
