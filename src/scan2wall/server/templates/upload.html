@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>scan2wall</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=2">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=2">
   <style>
     * { box-sizing: border-box; }
     body {
@@ -36,14 +39,30 @@
       background: #fff;
       overflow: hidden;
     }
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
     h1 {
       font-size: 2rem;
-      margin: 0 0 0.5rem;
+      margin: 0;
       font-weight: 700;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+    }
+    .global-queue-badge {
+      background: #667eea;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      white-space: nowrap;
     }
     .tagline {
       font-size: 1.1rem;
@@ -274,8 +293,10 @@
     }
 
     .viewer-3d {
+      aspect-ratio: 1 / 1;
       width: 100%;
-      height: 100%;
+      max-width: 100%;
+      height: auto;
       min-height: 250px;
     }
 
@@ -545,7 +566,12 @@
 </head>
 <body>
   <div class="card">
-    <h1>scan2wall</h1>
+    <div class="header-container">
+      <h1>scan2wall</h1>
+      <div id="globalQueueBadge" class="global-queue-badge">
+        <span id="globalQueueText">Checking...</span>
+      </div>
+    </div>
     <p class="tagline">Upload a photo of an object and see it being thrown against a wall!</p>
     <p class="small" style="color: #888; margin-bottom: 1.5rem;">Tap the box below to open your camera. Upload starts automatically.</p>
 
@@ -571,7 +597,7 @@
           <input id="file" class="hidden" type="file" name="file" accept="image/*">
           <label class="cta" for="file" id="uploadLabel">
             📷 <strong>Take or choose a photo</strong>
-            <span class="small">Click to select • Drag & drop • Auto-upload on selection</span>
+            <span class="small">Click to select • Drag & drop • Paste • Auto-upload on selection</span>
           </label>
         </form>
       </div>
@@ -777,7 +803,7 @@
         const needResize = renderer.domElement.width !== width || renderer.domElement.height !== height;
         if (needResize) {
           renderer.setSize(width, height, false);
-          camera.aspect = width / height;
+          camera.aspect = 1;  // Always maintain 1:1 aspect ratio (square view)
           camera.updateProjectionMatrix();
         }
         return needResize;
@@ -1028,8 +1054,15 @@
 
       // Update detailed queue info below progress bar
       if (data.status === 'queued' && data.queue_position > 0) {
-        const waitMin = Math.ceil(data.estimated_wait_seconds / 60);
-        queueInfo.textContent = `Position ${data.queue_position}/${data.queue_total} • Est. wait: ${waitMin} min`;
+        const jobsAhead = data.queue_position - 1; // Jobs ahead of this one
+        const waitMin = jobsAhead + 1; // X jobs ahead = X+1 minutes wait
+        if (jobsAhead === 0) {
+          queueInfo.textContent = `Your job is next! • ~${waitMin} minute estimated wait`;
+        } else if (jobsAhead === 1) {
+          queueInfo.textContent = `${jobsAhead} job ahead • ~${waitMin} minutes estimated wait`;
+        } else {
+          queueInfo.textContent = `${jobsAhead} jobs ahead • ~${waitMin} minutes estimated wait`;
+        }
       } else if (data.status === 'processing') {
         queueInfo.textContent = '';
       }
@@ -1231,6 +1264,56 @@
         await handleFileUpload(files[0]);
       }
     });
+
+    // Clipboard paste handler
+    document.addEventListener('paste', async (e) => {
+      const items = e.clipboardData.items;
+      for (let item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            await handleFileUpload(file);
+          }
+          break;
+        }
+      }
+    });
+
+    // Global queue status fetching
+    async function fetchGlobalQueueStatus() {
+      try {
+        const resp = await fetch('/queue/status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        updateGlobalQueueBadge(data.queue_total, data.estimated_wait_minutes);
+      } catch (e) {
+        console.error('Failed to fetch global queue status:', e);
+      }
+    }
+
+    function updateGlobalQueueBadge(total, waitMinutes) {
+      const badge = document.getElementById('globalQueueBadge');
+      const text = document.getElementById('globalQueueText');
+
+      if (total === 0) {
+        text.textContent = 'No wait ✓';
+        badge.style.background = '#4caf50';
+      } else {
+        text.textContent = `${total} job${total === 1 ? '' : 's'} in queue • ~${waitMinutes} min wait`;
+        badge.style.background = '#667eea';
+      }
+    }
+
+    // Fetch on page load
+    fetchGlobalQueueStatus();
+
+    // Poll every 10 seconds (only when no active job)
+    setInterval(() => {
+      if (!currentJobId) {
+        fetchGlobalQueueStatus();
+      }
+    }, 10000);
   </script>
 </body>
 </html>

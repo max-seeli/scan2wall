@@ -203,6 +203,17 @@ async def get_job_status(request: Request, job_id: str):
 # /jobs endpoint removed for privacy - users should not see other users' jobs
 # For queue position, each user only sees their own job via /job/{job_id}
 
+@app.get("/queue/status")
+@limiter.limit("120/minute")  # Allow frequent polling for queue status
+async def get_queue_status(request: Request):
+    """Get global queue status (total jobs in queue/processing)."""
+    total_queued = sum(1 for j in JOBS.values() if j["status"] in ["queued", "processing"])
+    estimated_wait_minutes = total_queued  # X jobs = X minutes (since each takes ~1 min)
+    return JSONResponse({
+        "queue_total": total_queued,
+        "estimated_wait_minutes": estimated_wait_minutes
+    })
+
 @app.get("/video/{job_id}")
 async def get_video(job_id: str, view: str = "static", download: bool = False):
     """Serve the simulation video for a completed job.

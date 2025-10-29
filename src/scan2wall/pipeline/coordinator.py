@@ -351,6 +351,21 @@ def process_image(job_id: str, image_path: str, jobs_dict: dict = None) -> str:
     accepted_concatenated_image = seg_result['concatenated']
     accepted_props = seg_result['properties']
 
+    # Validate object size BEFORE expensive 3D mesh generation
+    if USE_LLM and accepted_props:
+        dims = accepted_props.get("dimensions_m", {})
+        max_dimension = max(dims.get("length", 0), dims.get("width", 0), dims.get("height", 0))
+        if max_dimension > 5.0:
+            logger.log(f"ERROR: Object too large - max dimension: {max_dimension:.2f}m (limit: 5.0m)")
+            print(f"❌ Object rejected: max dimension {max_dimension:.2f}m exceeds 5m limit")
+            if jobs_dict and job_id in jobs_dict:
+                jobs_dict[job_id]["status"] = "rejected"
+            raise ValueError(
+                f"Object is too large! Maximum dimension is {max_dimension:.1f} meters. "
+                f"Please photograph an object with max 5 meter length!"
+            )
+        print(f"✓ Size validation passed: max dimension {max_dimension:.2f}m (limit: 5.0m)")
+
     # Save a copy of the final validated image for preview
     final_preview_path = Path(image_path) / f"{job_id}_final_segmented.png"
     shutil.copy2(accepted_cropped_image, final_preview_path)
