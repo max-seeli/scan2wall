@@ -47,6 +47,30 @@ sim_context = SimulationContext()
 print("✅ Isaac Lab initialized")
 
 # ============================================================================
+# Configure Rendering Settings - Disable Blur, Keep Ray Tracing
+# ============================================================================
+
+import carb
+settings = carb.settings.get_settings()
+
+print("🎨 Configuring rendering settings...")
+
+# Disable motion blur (causes blur during object motion)
+settings.set("/rtx/post/motionblur/enable", False)
+print("  ✓ Motion blur: DISABLED")
+
+# Disable temporal anti-aliasing (causes blur with fast motion)
+# 0=None, 1=FXAA, 2=TAA (temporal), 3=DLSS
+settings.set("/rtx/post/aa/op", 0)
+print("  ✓ Anti-aliasing: DISABLED (sharp rendering)")
+
+# Keep ray tracing quality high
+settings.set("/rtx/pathtracing/spp", 8)  # Samples per pixel
+print("  ✓ Ray tracing: ENABLED (8 samples per pixel)")
+
+print("✅ Rendering configured for sharp, blur-free output")
+
+# ============================================================================
 # STEP 2: Setup HTTP Server
 # ============================================================================
 
@@ -94,6 +118,25 @@ camera_state = {
     'follow_camera': None,
     'watermark_tensor': None
 }
+
+# ============================================================================
+# STEP 4: Generate fresh base scene on startup
+# ============================================================================
+
+import os
+from scan2wall.simulation import scene_builder
+
+base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
+
+# Remove old base scene file if it exists
+if os.path.exists(base_scene_path):
+    os.remove(base_scene_path)
+    print(f"🗑️  Removed old base scene: {base_scene_path}")
+
+# Create fresh base scene
+print(f"🏗️  Creating fresh base scene...")
+scene_builder.create_base_scene_usd(base_scene_path, sim_context)
+print(f"✅ Fresh base scene created: {base_scene_path}")
 
 print("✅ Kit main loop running")
 print("   API: http://localhost:8090")

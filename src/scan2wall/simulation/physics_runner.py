@@ -32,8 +32,8 @@ def create_static_camera(camera_path: str = "/World/RenderCamera") -> Camera:
     camera_cfg = CameraCfg(
         prim_path=camera_path,
         update_period=0,
-        height=720,
-        width=1280,
+        height=1080,
+        width=1920,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0,
@@ -72,8 +72,8 @@ def create_follow_camera(camera_path: str = "/World/FollowCamera") -> Camera:
     follow_camera_cfg = CameraCfg(
         prim_path=camera_path,
         update_period=0,
-        height=720,
-        width=1280,
+        height=1080,
+        width=1920,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0,
@@ -97,27 +97,45 @@ def create_follow_camera(camera_path: str = "/World/FollowCamera") -> Camera:
     return follow_camera
 
 
-def update_follow_camera_position(stage, obj_position: np.ndarray, camera_path: str = "/World/FollowCamera") -> None:
+def update_follow_camera_position(
+    stage,
+    obj_position: np.ndarray,
+    camera_path: str = "/World/FollowCamera",
+    obj_size: float = 1.0
+) -> None:
     """
-    Update follow camera position to track object.
+    Update follow camera position to track object at a distance proportional to its size.
 
     Args:
         stage: USD stage
         obj_position: Object position as numpy array (x, y, z)
         camera_path: USD path to camera prim
+        obj_size: Characteristic size (max dimension) of object in meters
     """
-    # Calculate follow camera position (centered behind object)
-    follow_offset = Gf.Vec3d(0.0, -3.0, 0.0)  # X=0 (centered), Y=-3m (behind), Z=0
+    from pxr import Gf
+    import math
+
+    # Dynamically set follow distance and vertical offset
+    follow_distance = max(0.5, 2.0 * obj_size)        # further for large objects
+    height_offset = 0.3 * follow_distance              # raise camera a bit with size
+
+    # Compute final camera position
+    follow_offset = Gf.Vec3d(0.0, -follow_distance, height_offset)
     follow_pos = Gf.Vec3d(float(obj_position[0]), float(obj_position[1]), float(obj_position[2])) + follow_offset
 
-    # Update camera transform
+    # Apply transform to camera prim
     follow_cam_prim = stage.GetPrimAtPath(camera_path)
     if follow_cam_prim.IsValid():
         xformable = UsdGeom.Xformable(follow_cam_prim)
         xformable.ClearXformOpOrder()
         xformable.AddTranslateOp().Set(follow_pos)
-        # Fixed rotation: look forward in +Y direction
-        xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble).Set(Gf.Quatd(0.7071, 0.7071, 0.0, 0.0))
+        
+        look_down_deg = -10.0
+        half_angle = math.radians(90 + look_down_deg) / 2
+        q = Gf.Quatd(math.cos(half_angle), math.sin(half_angle), 0.0, 0.0)
+
+        # Fixed orientation: look forward in +Y direction
+        xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble).Set(q)
 
 
 def apply_throwing_velocity(rigid_obj, dt: float, velocity: tuple = (0.0, 13.0, 6.0)) -> None:

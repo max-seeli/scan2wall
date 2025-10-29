@@ -103,7 +103,7 @@ def process_convert_job(job_id, data, job_results):
         mass = get_value(properties, 'weight_kg', 1.0)
         static_friction = properties.get('friction_coefficients', {}).get('static', 0.6)
         dynamic_friction = properties.get('friction_coefficients', {}).get('dynamic', 0.5)
-        restitution = get_value(properties, 'restitution', 0.5)
+        restitution = max(0.7, get_value(properties, 'restitution', 0.7))  # Min 0.7 for bouncy objects
 
         # Extract dimensions with backward compatibility
         dims = properties.get('dimensions_m', {})
@@ -139,7 +139,7 @@ def process_convert_job(job_id, data, job_results):
 
         # Step 1: Convert with appropriate collision
         if rigidity_type == "rigid":
-            collision_approx = "convexHull"
+            collision_approx = "convexDecomposition"  # More precise than convexHull - breaks into multiple convex pieces
         elif rigidity_type == "deformable":
             # For Flex deformables, skip collision during conversion
             # Isaac Sim 5.0 Flex system will generate particle-based collision at runtime
@@ -231,7 +231,7 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         out_dir = data.get('out_dir', '/workspace/s2w-data/recordings')
         video_length = data.get('video_length', 200)
         fps = data.get('fps', 50)
-        skip_first = data.get('skip_first', 0)  # Don't skip frames, show full throw
+        skip_first = data.get('skip_first', 20)  # Skip first 20 frames to avoid spawn/settle artifacts
         request_job_id = data.get('job_id', 'unknown')
 
         stage = sim_context.stage
@@ -241,10 +241,8 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             if stage.GetPrimAtPath(path).IsValid():
                 stage.RemovePrim(path)
 
-        # Load base scene with wall
+        # Load base scene with wall (created fresh at worker startup)
         base_scene_path = "/workspace/s2w-scripts/scenes/throw_against_brick_wall.usd"
-        if not os.path.exists(base_scene_path):
-            scene_builder.create_base_scene_usd(base_scene_path, sim_context)
         scene_builder.load_base_scene(base_scene_path, stage)
 
         # Pre-settle phase: Let wall stabilize before spawning object (PhysX best practice)
@@ -311,6 +309,15 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             scale_op = xformable.AddScaleOp(UsdGeom.XformOp.PrecisionFloat)
             scale_op.Set(existing_scale)
 
+        # --- NEW: Force Y↔Z swap via -90° rotation around X ---
+        from pxr import Gf
+        import math
+        rot_quat = Gf.Quatf(math.cos(math.radians(90)/2), math.sin(math.radians(-90)/2), 0.0, 0.0)
+        rot_op = xformable.AddOrientOp(UsdGeom.XformOp.PrecisionFloat)
+        rot_op.Set(Gf.Quatf(0.7071, 0.7071, 0.0, 0.0))  # equivalent to RotateX(-90)
+        print("   🔄 Applied -90° about X via OrientOp (quaternion form)", flush=True)
+
+
         # Add translation
         xformable.AddTranslateOp().Set((0.0, 0.0, spawn_z))
         print(f"   ✓ Root Xform positioned at (0, 0, {spawn_z:.3f})", flush=True)
@@ -332,11 +339,16 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
                 spawn=None,
                 init_state=RigidObjectCfg.InitialStateCfg(
                     pos=(0.0, 0.0, spawn_z),
-                    rot=(1.0, 0.0, 0.0, 0.0)
+                    rot=(0.7071, 0.7071, 0.0, 0.0)
                 )
             )
             physics_obj = RigidObject(cfg=rigid_cfg)
             print(f"✅ Rigid object created", flush=True)
+
+        # --- Initialize follow camera to see object immediately ---
+        initial_camera_pos = np.array([0.0, 0.0, spawn_z])
+        update_follow_camera_position(stage, initial_camera_pos, camera_path="/World/FollowCamera", obj_size=max(size))
+        print(f"🎥 Initialized follow camera at spawn height ({spawn_z:.3f}m)", flush=True)
 
         # Reset simulation to initialize physics
         sim_context.reset()
@@ -350,11 +362,8 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         if camera_state['follow_camera'] is None:
             camera_state['follow_camera'] = create_follow_camera("/World/FollowCamera")
 
-        # Apply throwing velocity
-        velocity_tensor = torch.tensor([[0.0, 13.0, 6.0, 0.0, 0.0, 0.0]], device=physics_obj.device)
-        physics_obj.write_root_velocity_to_sim(velocity_tensor)
-
-        # Force texture loading by touching all materials
+        # PHASE 1: Force texture loading FIRST (before settle)
+        # This prevents texture pop-in during the first frames
         print(f"🎨 Pre-loading textures...", flush=True)
         import omni.usd
         from pxr import UsdShade
@@ -366,11 +375,79 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
                 for input in shader.GetInputs():
                     # Touch each input to trigger loading
                     _ = input.Get()
+        print(f"✅ Textures pre-loaded", flush=True)
 
-        # Run simulation and capture frames
+        # PHASE 2: Let object settle to ground (3 seconds = 300 steps at 100Hz)
+        print(f"📦 Dropping object and recording settle phase...", flush=True)
         print(f"🎬 Running {video_length} simulation steps at {fps} FPS", flush=True)
         frames_static = []
         frames_follow = []
+        
+        # Zero initial velocity, start from rest
+        zero_velocity = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], device=physics_obj.device)
+        physics_obj.write_root_velocity_to_sim(zero_velocity)
+        physics_obj.write_data_to_sim()
+        
+        # Step once and record initial position before the fall
+        sim_context.step(render=False)
+        physics_obj.update(dt)
+        initial_pos = physics_obj.data.root_state_w[0, 0:3].cpu().numpy()
+        print(f"   Initial position before drop: [{initial_pos[0]:.3f}, {initial_pos[1]:.3f}, {initial_pos[2]:.3f}]", flush=True)
+        
+        # Now let it fall and capture frames
+        settle_steps = 100  # ≈1 seconds at 100 Hz
+        for step in range(settle_steps):
+            physics_obj.write_data_to_sim()
+            sim_context.step(render=True)
+            physics_obj.update(dt)
+
+            obj_pos = physics_obj.data.root_state_w[0, :3].cpu().numpy()
+            update_follow_camera_position(stage, obj_pos, camera_path="/World/FollowCamera", obj_size=max(size))
+            
+            camera_state['camera'].update(dt)
+            camera_state['follow_camera'].update(dt)
+            frame_static = camera_state['camera'].data.output["rgb"][0].clone()
+            frame_follow = camera_state['follow_camera'].data.output["rgb"][0].clone()
+
+            # Log camera resolution on first frame (debug check)
+            if step == 0:
+                print(f"   📷 Camera output resolution: {frame_static.shape} (expected: [1080, 1920, 4])", flush=True)
+
+            frames_static.append(frame_static)
+            frames_follow.append(frame_follow)
+
+
+        # PHASE 3: Verify object is at rest
+        # Data is already up-to-date from the last update() call
+        final_pos = physics_obj.data.root_state_w[0, 0:3].cpu().numpy()
+        final_vel_linear = physics_obj.data.root_state_w[0, 7:10]  # Linear velocity
+        final_vel_angular = physics_obj.data.root_state_w[0, 10:13]  # Angular velocity
+        vel_magnitude = torch.norm(final_vel_linear).item()
+
+        print(f"   Final position: [{final_pos[0]:.3f}, {final_pos[1]:.3f}, {final_pos[2]:.3f}]", flush=True)
+        print(f"   Position drift: [{final_pos[0]-initial_pos[0]:.3f}, {final_pos[1]-initial_pos[1]:.3f}, {final_pos[2]-initial_pos[2]:.3f}]", flush=True)
+
+        if vel_magnitude > 0.01:  # 1cm/s threshold
+            print(f"⚠️  WARNING: Object not fully at rest! Linear velocity: {vel_magnitude:.4f} m/s", flush=True)
+        else:
+            print(f"✅ Object verified at rest (velocity: {vel_magnitude:.6f} m/s)", flush=True)
+
+        # PHASE 4: Apply throwing velocity and start recording immediately
+        print(f"🎯 Applying throwing velocity and starting recording...", flush=True)
+        velocity_tensor = torch.tensor([[0.0, 18.2, 4.0, 0.0, 0.0, 2.0]], device=physics_obj.device)
+        physics_obj.write_root_velocity_to_sim(velocity_tensor)
+        physics_obj.write_data_to_sim()
+
+        # Step once to apply velocity and get initial throw state
+        sim_context.step(render=False)
+        physics_obj.update(dt)
+
+        # Log initial throw state
+        throw_pos = physics_obj.data.root_state_w[0, 0:3].cpu().numpy()
+        throw_vel = physics_obj.data.root_state_w[0, 7:10].cpu().numpy()
+        print(f"   Initial throw position: [{throw_pos[0]:.3f}, {throw_pos[1]:.3f}, {throw_pos[2]:.3f}]", flush=True)
+        print(f"   Initial throw velocity: [{throw_vel[0]:.3f}, {throw_vel[1]:.3f}, {throw_vel[2]:.3f}]", flush=True)
+        print(f"✅ Starting recording from first frame of throw", flush=True)
 
         for step in range(video_length):
             physics_obj.write_data_to_sim()
@@ -380,7 +457,7 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
             # Update follow camera position
             obj_pos = physics_obj.data.root_state_w[0, :3].cpu().numpy()
 
-            update_follow_camera_position(stage, obj_pos, camera_path="/World/FollowCamera")
+            update_follow_camera_position(stage, obj_pos, camera_path="/World/FollowCamera", obj_size=max(size))
 
             # Update cameras and capture frames
             camera_state['camera'].update(dt)
@@ -399,8 +476,12 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         static_video = os.path.join(out_dir, f"{request_job_id}_static.mp4")
         follow_video = os.path.join(out_dir, f"{request_job_id}_follow.mp4")
 
-        ffmpeg_encode_from_memory(frames_static_numpy, static_video, fps, skip_first=skip_first, job_id=request_job_id)
-        ffmpeg_encode_from_memory(frames_follow_numpy, follow_video, fps, skip_first=skip_first, job_id=request_job_id)
+        # Get actual frame dimensions from numpy array shape (N, H, W, C)
+        height, width = frames_static_numpy.shape[1], frames_static_numpy.shape[2]
+        print(f"🎬 Encoding videos at {width}×{height}...", flush=True)
+
+        ffmpeg_encode_from_memory(frames_static_numpy, static_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
+        ffmpeg_encode_from_memory(frames_follow_numpy, follow_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
 
         elapsed = time.time() - start_time
         logger.info(f"Simulation complete in {elapsed:.2f}s: {job_id}")

@@ -138,11 +138,18 @@ def _add_physics_properties(
 
     print(f"  Adding physics to: {root_prim.GetPath()}")
 
-    # 1. Add RigidBodyAPI
+    # 1. Add RigidBodyAPI with CCD (Continuous Collision Detection)
     if not root_prim.HasAPI(UsdPhysics.RigidBodyAPI):
         rigid_api = UsdPhysics.RigidBodyAPI.Apply(root_prim)
         rigid_api.CreateRigidBodyEnabledAttr().Set(True)
         print(f"  ✓ Added RigidBodyAPI")
+
+    # Enable CCD to prevent fast-moving objects from tunneling through walls
+    from pxr import PhysxSchema
+    if not root_prim.HasAPI(PhysxSchema.PhysxRigidBodyAPI):
+        physx_rb = PhysxSchema.PhysxRigidBodyAPI.Apply(root_prim)
+        physx_rb.CreateEnableCCDAttr().Set(True)
+        print(f"  ✓ Enabled CCD (prevents tunneling through walls)")
 
     # 2. Add MassAPI and set mass
     if not root_prim.HasAPI(UsdPhysics.MassAPI):
