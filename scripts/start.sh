@@ -377,12 +377,14 @@ sleep 3
 # Check if cloudflared is installed and tunnel is configured
 if command -v cloudflared &> /dev/null && [ -f "$HOME/.cloudflared/config.yml" ]; then
     echo "Starting Cloudflare Tunnel..."
-    tmux new-window -t $SESSION -n "cloudflared" "cloudflared tunnel run scan2wall 2>&1 | tee $PROJECT_ROOT/data/logs/cloudflared.log"
+    # Get tunnel ID from config
+    TUNNEL_ID=$(grep '^tunnel:' "$HOME/.cloudflared/config.yml" | awk '{print $2}')
+    tmux new-window -t $SESSION -n "cloudflared" "cloudflared tunnel run $TUNNEL_ID 2>&1 | tee $PROJECT_ROOT/data/logs/cloudflared.log"
     sleep 2
     echo -e "${GREEN}✓${NC} Cloudflare Tunnel started"
 else
     echo -e "${YELLOW}⚠${NC} Cloudflare Tunnel not configured (optional)"
-    echo "  To set up: see DEPLOYMENT.md"
+    echo "  To set up: ./scripts/cloudflarelink.sh"
 fi
 
 # Start Docker log capture in background

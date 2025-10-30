@@ -130,6 +130,28 @@ echo -e "${GREEN}✓ Phase 3 Complete${NC}"
 echo ""
 
 # ============================================================================
+# Cloudflared Installation
+# ============================================================================
+
+echo ""
+echo "=========================================="
+echo "Cloudflared Installation"
+echo "=========================================="
+echo ""
+
+if command -v cloudflared &> /dev/null; then
+    echo -e "${GREEN}✓ cloudflared already installed${NC}"
+else
+    echo "Installing cloudflared..."
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+    chmod +x /tmp/cloudflared
+    sudo mv /tmp/cloudflared /usr/local/bin/cloudflared
+    echo -e "${GREEN}✓ cloudflared installed${NC}"
+fi
+
+echo ""
+
+# ============================================================================
 # API Key Configuration
 # ============================================================================
 
@@ -204,6 +226,7 @@ echo "    - web-viewer container (streaming UI)"
 echo "    - nginx container (reverse proxy)"
 echo "  ✓ ComfyUI with Hunyuan3D models"
 echo "  ✓ scan2wall Python package"
+echo "  ✓ cloudflared (Cloudflare Tunnel CLI)"
 echo ""
 echo "Quick Start:"
 echo "============"
@@ -230,6 +253,9 @@ echo "    ./isaaclab.sh -p"
 echo ""
 echo "Access the web interface:"
 echo "  http://localhost:49100"
+echo ""
+echo "Optional - Public Access via Cloudflare Tunnel:"
+echo "  ./scripts/cloudflarelink.sh"
 echo ""
 echo -e "${YELLOW}Documentation:${NC}"
 echo "  • README.md - Project overview"

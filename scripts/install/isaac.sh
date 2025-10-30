@@ -41,6 +41,79 @@ mkdir -p "$ISAAC_DIR"
 # Auto-Installation Functions
 # ============================================================================
 
+# Helper function to check if user has docker group access
+check_docker_group_access() {
+    docker ps &> /dev/null
+    return $?
+}
+
+# Helper function to restart script with docker group privileges
+restart_with_docker_group() {
+    echo ""
+    echo "=========================================="
+    echo "Docker Group Activation"
+    echo "=========================================="
+    echo ""
+    echo "The script needs to restart with docker group privileges."
+    echo "This will re-execute the script with proper permissions."
+    echo ""
+    echo "Command to run: exec sg docker -c \"$0 $*\""
+    echo ""
+
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo "Running in non-interactive mode - restarting automatically..."
+        exec sg docker -c "$0 $*"
+    fi
+
+    read -p "Restart script with docker group? (Y/n): " -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo "Restarting script with docker group..."
+        exec sg docker -c "$0 $*"
+    else
+        echo ""
+        echo "To continue manually, run ONE of the following:"
+        echo "  1. ${GREEN}exec sg docker -c \"$0 \$*\"${NC}"
+        echo "  2. ${GREEN}newgrp docker${NC}, then re-run: $0 $*"
+        echo "  3. Log out and log back in, then re-run: $0 $*"
+        echo ""
+        exit 1
+    fi
+}
+
+# Helper function to add docker group auto-activation to .bashrc
+add_docker_group_helper_to_bashrc() {
+    local bashrc="$HOME/.bashrc"
+    local marker="# scan2wall: docker group auto-activation"
+
+    # Check if already added
+    if grep -q "$marker" "$bashrc" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} Docker group helper already in .bashrc"
+        return 0
+    fi
+
+    echo "Adding docker group helper to .bashrc..."
+
+    cat >> "$bashrc" << 'EOF'
+
+# scan2wall: docker group auto-activation
+# Auto-activates docker group if user is member but shell doesn't have access
+if command -v docker &> /dev/null; then
+    if groups | grep -q docker && ! docker ps &> /dev/null 2>&1; then
+        # Prevent infinite loop
+        if [ "$DOCKER_GROUP_ACTIVATED" != "true" ]; then
+            echo "Activating docker group for this shell..."
+            export DOCKER_GROUP_ACTIVATED=true
+            exec sg docker -c "DOCKER_GROUP_ACTIVATED=true bash"
+        fi
+    fi
+fi
+EOF
+
+    echo -e "${GREEN}✓${NC} Added docker group helper to .bashrc"
+    echo "  Future terminal sessions will auto-activate docker group"
+}
+
 install_docker() {
     echo ""
     echo "=========================================="
@@ -80,6 +153,9 @@ install_docker() {
     echo "Adding user to docker group..."
     sudo usermod -aG docker "$USER"
 
+    # Add helper to .bashrc for future shells
+    add_docker_group_helper_to_bashrc
+
     # Activate docker group for current shell
     echo "Activating docker group..."
     # Restart docker service to ensure it's running with updated configuration
@@ -99,17 +175,7 @@ install_docker() {
             return 0
         else
             echo -e "${YELLOW}⚠${NC} Docker installed but current shell doesn't have docker group access"
-            echo ""
-            echo -e "${YELLOW}IMPORTANT: You need to activate the docker group for this shell session.${NC}"
-            echo ""
-            echo "Please run ONE of the following:"
-            echo "  1. Activate docker group in current shell: ${GREEN}exec sg docker -c \"$0 \$*\"${NC}"
-            echo "  2. Or exit this script and run: ${GREEN}newgrp docker${NC}, then re-run setup"
-            echo "  3. Or log out and log back in, then re-run setup"
-            echo ""
-            echo "Press Enter to exit this script..."
-            read
-            exit 1
+            restart_with_docker_group
         fi
     else
         echo -e "${RED}✗ Docker installation verification failed${NC}"
@@ -228,6 +294,26 @@ if ! command -v docker &> /dev/null; then
     install_docker
 else
     echo -e "${GREEN}✓${NC} Docker installed: $(docker --version)"
+
+    # Check if user has docker group access
+    if ! check_docker_group_access; then
+        echo -e "${YELLOW}⚠${NC} Docker installed but current user lacks docker group access"
+
+        # Add user to docker group
+        echo "Adding user to docker group..."
+        sudo usermod -aG docker "$USER"
+
+        # Add helper to .bashrc for future shells
+        add_docker_group_helper_to_bashrc
+
+        # Restart docker service to ensure it's running with updated configuration
+        echo "Restarting Docker service..."
+        sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null
+        sleep 3
+
+        # Restart script with docker group
+        restart_with_docker_group
+    fi
 fi
 
 # Check for nvidia-container-toolkit
