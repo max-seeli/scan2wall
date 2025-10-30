@@ -99,7 +99,7 @@ add_docker_group_helper_to_bashrc() {
 # scan2wall: docker group auto-activation
 # Auto-activates docker group if user is member but shell doesn't have access
 if command -v docker &> /dev/null; then
-    if groups | grep -q docker && ! docker ps &> /dev/null 2>&1; then
+    if id -nG "$USER" 2>/dev/null | grep -qw docker && ! docker ps &> /dev/null 2>&1; then
         # Prevent infinite loop
         if [ "$DOCKER_GROUP_ACTIVATED" != "true" ]; then
             echo "Activating docker group for this shell..."

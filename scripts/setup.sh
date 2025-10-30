@@ -71,7 +71,23 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}✓ Phase 1 Complete - Docker containers running${NC}"
+echo -e "${GREEN}✓ Phase 1 Complete${NC}"
+echo ""
+
+# Verify Docker access
+if ! docker ps &> /dev/null 2>&1; then
+    echo -e "${YELLOW}⚠ Docker group configured but not active in current shell${NC}"
+    echo ""
+    echo "To use Docker, please do ONE of the following:"
+    echo "  1. Open a NEW terminal window and continue from there"
+    echo "  2. Or run: newgrp docker"
+    echo "  3. Or logout and login again"
+    echo ""
+    echo -e "After that, Docker will work automatically in new terminals."
+    echo ""
+else
+    echo -e "${GREEN}✓ Docker access verified${NC}"
+fi
 echo ""
 
 # ============================================================================
