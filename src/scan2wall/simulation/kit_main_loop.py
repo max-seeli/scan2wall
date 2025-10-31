@@ -287,15 +287,24 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         )
         wall_bricks = RigidObject(cfg=wall_bricks_cfg)
 
-        # Pre-settle phase: Let wall stabilize before spawning object (PhysX best practice)
-        # This allows contacts to stabilize and friction cones to align
-        print(f"🧱 Pre-settling wall (300 steps)...", flush=True)
+        # Initialize cameras BEFORE pre-settle so we can record the wall collapse
         sim_context.reset()  # This initializes the RigidObject
         dt = sim_context.get_physics_dt()
-        settle_steps = 300  # 3.0 seconds at 100Hz physics timestep (increased for realistic brick mass)
+
+        if camera_state['camera'] is None:
+            camera_state['camera'] = create_static_camera("/World/RenderCamera")
+        if camera_state['follow_camera'] is None:
+            camera_state['follow_camera'] = create_follow_camera("/World/FollowCamera")
+
+        # Pre-settle phase: Let wall stabilize before spawning object (PhysX best practice)
+        # This allows contacts to stabilize and friction cones to align
+        print(f"🧱 Pre-settling wall (200 steps = 2 seconds)...", flush=True)
+
+        settle_steps = 200  # 2.0 seconds at 100Hz physics timestep (reduced for speed)
         for step in range(settle_steps):
-            sim_context.step(render=False)
-        print(f"✅ Wall pre-settled", flush=True)
+            sim_context.step(render=False)  # No rendering during wall pre-settle (faster)
+
+        print(f"✅ Wall pre-settled (no debug recording)", flush=True)
 
         # Record initial positions after pre-settle (this is our baseline)
         wall_brick_positions_initial = wall_bricks.data.root_state_w[:, 0:3].cpu().numpy()
@@ -322,16 +331,13 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         bbox_min = bbox_range.GetMin()
         bbox_max = bbox_range.GetMax()
 
-        # Phase B: Calculate spawn height with proper clearance
-        # Rule: 5cm minimum clearance OR 20% of largest dimension
-        clearance = max(0.05, 0.2 * max(size[0], size[1], size[2]))
-        # Spawn so the bottom of the object is at clearance height above ground (z=0)
-        # bbox_min[2] is the lowest point in current position, size[2] is height
-        spawn_z = size[2] / 2.0 + clearance
+        # Phase B: Calculate spawn height with fixed 1m drop height
+        # Bottom of object will be at 1.0m above ground before drop
+        spawn_z = 1.0 + size[2] / 2.0
 
         print(f"📏 Object bbox: min={[f'{x:.3f}' for x in bbox_min]}, max={[f'{x:.3f}' for x in bbox_max]}", flush=True)
         print(f"📏 Object size: {size[0]:.2f}m x {size[1]:.2f}m x {size[2]:.2f}m", flush=True)
-        print(f"📍 Spawn height: {spawn_z:.3f}m (clearance: {clearance:.3f}m)", flush=True)
+        print(f"📍 Spawn height: {spawn_z:.3f}m (1m drop height + {size[2]/2.0:.3f}m half-height)", flush=True)
         print(f"🔬 Rigidity type: {rigidity_type}", flush=True)
 
         # Phase B: Reposition root Xform to spawn height (preserve existing scale!)
@@ -471,7 +477,7 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         print(f"   Initial position before drop: [{initial_pos[0]:.3f}, {initial_pos[1]:.3f}, {initial_pos[2]:.3f}]", flush=True)
         
         # Now let it fall and capture frames
-        settle_steps = 100  # ≈1 seconds at 100 Hz
+        settle_steps = 100  # ≈1 seconds at 100 Hz (reduced for box collider stability)
         for step in range(settle_steps):
             physics_obj.write_data_to_sim()
             sim_context.step(render=True)

@@ -38,13 +38,40 @@ import time
 time.sleep(1)
 
 # Now continue with your existing code
-from isaaclab.sim import SimulationContext
+from isaaclab.sim import SimulationContext, SimulationCfg, PhysxCfg
 
 import omni.kit.app
 
-# Initialize simulation context
-sim_context = SimulationContext()
-print("✅ Isaac Lab initialized")
+# Initialize simulation context with proper physics configuration
+# This is CRITICAL for wall stability - without proper solver iterations and timestep,
+# the 24-layer brick wall will collapse during pre-settle phase
+sim_cfg = SimulationCfg(
+    dt=0.01,  # 100Hz physics timestep (increased for box collider stability)
+    render_interval=1,  # Render every physics step (replaced deprecated 'substeps')
+    gravity=(0.0, 0.0, -9.81),
+    physx=PhysxCfg(
+        solver_type=1,  # TGS (Temporal Gauss-Seidel) - more stable than PGS for tall stacks
+        min_position_iteration_count=48,  # Increased for 200Hz (TGS loves position iters)
+        max_position_iteration_count=64,
+        min_velocity_iteration_count=12,
+        max_velocity_iteration_count=24,
+        enable_ccd=True,  # Continuous Collision Detection - prevents tunneling
+        enable_stabilization=True,  # Additional stabilization for stacked objects
+        bounce_threshold_velocity=0.05,
+        friction_correlation_distance=0.02,
+        # Increase GPU buffers for 24-layer wall (360 bricks = many contacts)
+        gpu_max_rigid_contact_count=2**22,  # 4M contacts (was default ~500k)
+        gpu_max_rigid_patch_count=2**19,     # 512K patches (was default ~80k)
+        gpu_found_lost_pairs_capacity=2**21, # 2M pairs (was default ~256k)
+        gpu_collision_stack_size=2**28       # 256MB stack (was default ~64MB)
+    )
+)
+
+sim_context = SimulationContext(cfg=sim_cfg)
+print("✅ Isaac Lab initialized with physics config:")
+print(f"   • Timestep: {sim_cfg.dt}s (100Hz)")
+print(f"   • Solver iterations: {sim_cfg.physx.min_position_iteration_count}-{sim_cfg.physx.max_position_iteration_count} position, {sim_cfg.physx.min_velocity_iteration_count}-{sim_cfg.physx.max_velocity_iteration_count} velocity")
+print(f"   • CCD: {sim_cfg.physx.enable_ccd}, Stabilization: {sim_cfg.physx.enable_stabilization}")
 
 # ============================================================================
 # Configure Rendering Settings - Disable Blur, Keep Ray Tracing

@@ -36,22 +36,30 @@ def create_base_scene_usd(output_path: str = "/workspace/s2w-scripts/scenes/thro
         from pxr import PhysxSchema
         physx_scene = PhysxSchema.PhysxSceneAPI.Apply(stage.GetPrimAtPath(physx_scene_path))
 
-        # CRITICAL: Disable PCM, use Legacy collision for stable stacking
-        physx_scene.CreateEnablePCMAttr().Set(False)  # ← THE KEY FIX! PCM causes missed contacts
+        # CRITICAL: ENABLE PCM for PhysX 5.x (improves contact manifolds for stacking)
+        # Note: "Legacy collision is best" advice is OLD - PCM's manifold persistence helps towers!
+        physx_scene.CreateEnablePCMAttr().Set(True)  # ← FLIPPED! PCM ON for stable stacks in PhysX 5
         physx_scene.CreateEnableCCDAttr().Set(True)
         physx_scene.CreateEnableStabilizationAttr().Set(True)
 
-        # Scene-level solver iterations (override per-object settings for consistency)
-        physx_scene.CreateSolverPositionIterationCountAttr().Set(20)
-        physx_scene.CreateSolverVelocityIterationCountAttr().Set(8)
+        # CRITICAL: Enable external forces (gravity) in every TGS iteration
+        # This prevents gravity from overwhelming contact resolution in tall stacks
+        physx_scene.CreateEnableExternalForcesEveryIterationAttr().Set(True)
 
-        # Bounce threshold (allow bouncing at lower velocities to prevent sticking)
-        physx_scene.CreateBounceThresholdAttr().Set(0.05)
+        # Scene-level solver iterations (TGS loves position iterations)
+        physx_scene.CreateSolverPositionIterationCountAttr().Set(48)  # Increased for 200Hz + tall wall
+        physx_scene.CreateSolverVelocityIterationCountAttr().Set(12)  # Sufficient for velocity resolution
 
-        # Friction correlation distance (improve contact stability - 20mm)
-        physx_scene.CreateFrictionCorrelationDistanceAttr().Set(0.02)
+        # Bounce threshold (HIGH to prevent micro-bounces in brick lattice)
+        physx_scene.CreateBounceThresholdAttr().Set(2.0)  # 2.0 m/s - bricks below this don't bounce
 
-        print(f"  🔧 PhysX configured: PCM OFF, Legacy collision, CCD ON, solver 20/8")
+        # Friction correlation distance (small for 0.15m bricks)
+        physx_scene.CreateFrictionCorrelationDistanceAttr().Set(0.005)  # 5mm (was 20mm - too large)
+
+        # Max depenetration velocity (clamp to prevent "exploding brick" syndrome)
+        physx_scene.CreateMaxDepenetrationVelocityAttr().Set(1.5)  # 1.5 m/s max correction speed
+
+        print(f"  🔧 PhysX configured: PCM ON, CCD ON, ExternalForces per-iter, MaxDepenVel 1.5, solver 48/12")
     else:
         print(f"  ⚠️  PhysX scene not found at {physx_scene_path}")
 
@@ -73,13 +81,13 @@ def create_base_scene_usd(output_path: str = "/workspace/s2w-scripts/scenes/thro
     build_wall(
         "/World/StaticObjects/Wall",
         width=15,  # Realistic brick count
-        height=12,  # 12 bricks = 1.8m tall
+        height=24,  # 24 bricks = 3.6m tall
         brick_width=0.3,   # Realistic brick size
         brick_height=0.15,  # Realistic brick size
         brick_depth=0.15,   # Realistic brick size
         gap=0.0,
         base_xy=(0.0, 10.0),  # Wall position
-        z0=0.076,  # 75mm center + 1mm clearance from ground
+        z0=0.080,  # 75mm center + 5mm clearance from ground (increased for stability)
         stage=stage,
         texture_path="/workspace/s2w-data/textures/brick_with_gap.png"
     )
@@ -133,13 +141,13 @@ def build_scene_from_scratch(stage: Usd.Stage) -> None:
     build_wall(
         "/World/StaticObjects/Wall",
         width=15,  # Realistic brick count
-        height=12,  # 12 bricks = 1.8m tall
+        height=24,  # 24 bricks = 3.6m tall
         brick_width=0.3,   # Realistic brick size
         brick_height=0.15,  # Realistic brick size
         brick_depth=0.15,   # Realistic brick size
         gap=0.0,
         base_xy=(0.0, 10.0),  # Wall position
-        z0=0.076,  # 75mm center + 1mm clearance from ground
+        z0=0.080,  # 75mm center + 5mm clearance from ground (increased for stability)
         stage=stage,
         texture_path="/workspace/s2w-data/textures/brick_with_gap.png"
     )
@@ -570,24 +578,32 @@ def build_wall(
     """
     prim_utils.create_prim(parent, "Xform")
 
-    # Normal brick friction
+    # HIGH friction brick material (expert recipe: 0.8/0.6, zero bounce, MIN combine)
     brick_physics_material = sim_utils.RigidBodyMaterialCfg(
-        static_friction=0.6,   # Normal concrete friction
-        dynamic_friction=0.5,  # Slightly lower than static
-        restitution=0.2        # Moderate bounce
+        static_friction=0.8,   # High static friction for stability
+        dynamic_friction=0.6,  # High dynamic friction
+        restitution=0.0,       # ZERO bounce - no micro-bounces in brick lattice
+        friction_combine_mode="min",  # MIN combine mode to avoid slippery contacts
+        restitution_combine_mode="min"
     )
 
-    # DYNAMIC bricks - STABLE STACKING CONFIG (Legacy collision + high solver iterations)
+    # DYNAMIC bricks - EXPERT STABLE STACKING CONFIG (PCM + box colliders + tight tolerances)
     cfg_brick = sim_utils.CuboidCfg(
-        size=(brick_width, brick_depth, brick_height),  # 100% size - no gaps!
+        size=(brick_width, brick_depth, brick_height),  # Box collider = perfect for uniform bricks!
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            solver_position_iteration_count=32,  # Reduced for lighter 7kg bricks (still robust)
-            solver_velocity_iteration_count=8,   # Reduced for lighter bricks
-            stabilization_threshold=0.0001,      # Very low threshold for maximum stability
+            solver_position_iteration_count=32,  # Fine for 7kg bricks at 200Hz
+            solver_velocity_iteration_count=8,   # Sufficient velocity resolution
+            stabilization_threshold=0.0001,      # Very low threshold for stability
+            linear_damping=0.15,   # Damping to dissipate energy (prevents jitter)
+            angular_damping=0.35,  # Higher angular damping (prevents spinning)
+            disable_gravity=False,
+            max_depenetration_velocity=1.5,  # Clamp correction speed (prevents explosions)
+            enable_gyroscopic_forces=True
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(
-            contact_offset=0.005,  # 5mm contact detection
-            rest_offset=0.001      # 1mm separation to prevent spawn overlaps
+            contact_offset=0.0015,  # 1.5mm contact detection (small for tight stacking)
+            rest_offset=0.0,        # ZERO rest offset (bricks touch when stacked)
+            collision_enabled=True
         ),
         mass_props=sim_utils.MassPropertiesCfg(mass=7.0),  # 7kg realistic concrete brick
         physics_material=brick_physics_material,
@@ -598,9 +614,9 @@ def build_wall(
     )
 
     x0, y0 = base_xy
-    # No physical gaps - bricks touching (visual gaps via texture)
-    gap_x = 0.0  # No horizontal gap
-    gap_z = 0.0  # No vertical gap
+    # ZERO physical gaps (expert recipe: gaps cause instability, use texture for visual mortar)
+    gap_x = 0.0  # No horizontal gap - bricks touch
+    gap_z = 0.0  # No vertical gap - bricks touch
 
     brick_spacing_x = brick_width + gap_x
     brick_spacing_z = brick_height + gap_z
@@ -621,9 +637,10 @@ def build_wall(
             brick_path = f"{parent}/brick_{row}_{col}"
             cfg_brick.func(brick_path, cfg_brick, translation=(x, y, z))
 
-            # Enable CCD on brick (critical for preventing tunneling)
-            if stage is not None:
-                _enable_brick_ccd(stage, brick_path)
+            # CCD DISABLED for static bricks (expert advice: use CCD only for fast movers/projectiles)
+            # CCD adds unnecessary solver overhead for stacked objects
+            # if stage is not None:
+            #     _enable_brick_ccd(stage, brick_path)
 
             # Apply texture if provided
             if stage is not None and texture_path is not None:

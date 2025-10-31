@@ -817,6 +817,7 @@ def make_throwing_anim(file: str, job_id: str = None, status_updater=None):
         "video": True,
         "video_length": 200,
         "fps": 50,
+        "skip_first": 0,  # Show all frames from start (no frame skipping)
         "job_id": job_id,
     }
 
