@@ -104,8 +104,16 @@ echo "📦 Installing custom node dependencies..."
 for repo in "${CUSTOM_NODES[@]}"; do
     repo_name=$(basename "$repo")
     if [ -f "$repo_name/requirements.txt" ]; then
-        echo "📦 Installing $repo_name dependencies..."
-        uv pip install -r "$repo_name/requirements.txt"
+        # Special handling for MeshCraft: skip diso (installed later with proper CUDA environment)
+        # diso needs torch headers at compile time, so we install it after torch is fully available
+        if [ "$repo_name" = "ComfyUI-MeshCraft" ]; then
+            echo "📦 Installing $repo_name dependencies (diso will be installed later with CUDA environment)..."
+            # Filter out diso line and install the rest
+            grep -v "^diso" "$repo_name/requirements.txt" | uv pip install -r /dev/stdin
+        else
+            echo "📦 Installing $repo_name dependencies..."
+            uv pip install -r "$repo_name/requirements.txt"
+        fi
     else
         echo "   ℹ️  No requirements.txt found for $repo_name"
     fi
