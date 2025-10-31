@@ -565,6 +565,14 @@ def process_simulation_job(job_id, data, job_results, sim_context, camera_state)
         ffmpeg_encode_from_memory(frames_static_numpy, static_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
         ffmpeg_encode_from_memory(frames_follow_numpy, follow_video, fps, skip_first=skip_first, width=width, height=height, job_id=request_job_id)
 
+        # Clear frame buffers to free GPU memory (~1-2GB per simulation)
+        print(f"🧹 Clearing frame buffers from GPU memory...", flush=True)
+        del frames_static, frames_follow
+        del frames_static_numpy, frames_follow_numpy
+        import torch
+        torch.cuda.empty_cache()
+        print(f"✅ Frame buffers cleared", flush=True)
+
         # Calculate destruction score
         print(f"\n🎯 Calculating destruction score...", flush=True)
         destruction_score = calculate_destruction_score(wall_brick_positions_initial, wall_bricks)
